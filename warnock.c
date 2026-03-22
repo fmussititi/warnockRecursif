@@ -6,12 +6,13 @@
 #include "warnock.h"
 #include <stdatomic.h>
 #include <pthread.h>
+#include <immintrin.h>
 
-#define NUM_THREADS 16
+#define NUM_THREADS 8
 
 #define SCREEN_WIDTH 1600
 #define SCREEN_HEIGHT 900
-#define BACKFACECULLING 1
+#define BACKFACECULLING 0
 
 // Switch rendu type Warnock
 #define WARNOCK 0
@@ -548,15 +549,12 @@ void drawTile(RenderContext* ctx, int tx, int ty)
 {
     int x0 = tx * TILE_SIZE;
     int y0 = ty * TILE_SIZE;
-
     int x1 = x0 + TILE_SIZE;
-    int y1 = y0 + TILE_SIZE;
+    int yEnd = y0 + TILE_SIZE; // ← renommer y1 en yEnd
 
     Tile* tile = &tiles[ty * tilesX + tx];
 
-    // Z-buffer local tile
     float zbuf[TILE_SIZE * TILE_SIZE];
-
     for (int i = 0; i < TILE_SIZE * TILE_SIZE; i++)
         zbuf[i] = 1e9f;
 
@@ -564,21 +562,21 @@ void drawTile(RenderContext* ctx, int tx, int ty)
     {
         Poly* tri = &ctx->polys[tile->indices[t]];
 
-        // bounding box CLAMPÉE au tile
         int minX = (int)fmaxf(x0, floorf(tri->minX));
         int maxX = (int)fminf(x1 - 1, ceilf(tri->maxX));
         int minY = (int)fmaxf(y0, floorf(tri->minY));
-        int maxY = (int)fminf(y1 - 1, ceilf(tri->maxY));
+        int maxY = (int)fminf(yEnd-1, ceilf(tri->maxY));
 
-        if (minX > maxX || minY > maxY)
-            continue;
+        if (minX > maxX || minY > maxY) continue;
 
-        // edges
         EdgeEq e0 = makeEdge(tri->p0, tri->p1);
         EdgeEq e1 = makeEdge(tri->p1, tri->p2);
         EdgeEq e2 = makeEdge(tri->p2, tri->p0);
 
-        // point de départ (centre pixel)
+        float area    = (tri->p1.x - tri->p0.x)*(tri->p2.y - tri->p0.y) -
+                        (tri->p2.x - tri->p0.x)*(tri->p1.y - tri->p0.y);
+        float invArea = 1.0f / area;
+
         float startX = minX + 0.5f;
         float startY = minY + 0.5f;
 
@@ -586,151 +584,174 @@ void drawTile(RenderContext* ctx, int tx, int ty)
         float w1_row = evalEdge(e1, startX, startY);
         float w2_row = evalEdge(e2, startX, startY);
 
+        // Précalcul des incréments pour 8 pixels
+        // offsets[k] = k * e.A  pour k = 0..7
+        __m256 e0A_8 = _mm256_set1_ps(e0.A * 8); // incrément de 8 pixels
+        __m256 e1A_8 = _mm256_set1_ps(e1.A * 8);
+        __m256 e2A_8 = _mm256_set1_ps(e2.A * 8);
+
+        __m256 offsets = _mm256_set_ps(7,6,5,4,3,2,1,0); // 0,1,2,3,4,5,6,7
+        __m256 zero    = _mm256_setzero_ps();
+
         for (int y = minY; y <= maxY; y++)
         {
-            float w0 = w0_row;
-            float w1 = w1_row;
-            float w2 = w2_row;
+            // Initialiser w0,w1,w2 pour les 8 premiers pixels de cette ligne
+            __m256 w0_v = _mm256_add_ps(
+                _mm256_set1_ps(w0_row),
+                _mm256_mul_ps(offsets, _mm256_set1_ps(e0.A))
+            );
+            __m256 w1_v = _mm256_add_ps(
+                _mm256_set1_ps(w1_row),
+                _mm256_mul_ps(offsets, _mm256_set1_ps(e1.A))
+            );
+            __m256 w2_v = _mm256_add_ps(
+                _mm256_set1_ps(w2_row),
+                _mm256_mul_ps(offsets, _mm256_set1_ps(e2.A))
+            );
 
-            for (int x = minX; x <= maxX; x++)
+            for (int x = minX; x <= maxX; x += 8)
             {
-                if (w0 >= 0 && w1 >= 0 && w2 >= 0)
+                // Test : les 8 pixels sont-ils dans le triangle ?
+                __m256 m0 = _mm256_cmp_ps(w0_v, zero, _CMP_GE_OS);
+                __m256 m1 = _mm256_cmp_ps(w1_v, zero, _CMP_GE_OS);
+                __m256 m2 = _mm256_cmp_ps(w2_v, zero, _CMP_GE_OS);
+                __m256 mask = _mm256_and_ps(_mm256_and_ps(m0, m1), m2);
+
+                int imask = _mm256_movemask_ps(mask);
+
+                if (imask != 0) // au moins 1 pixel valide
                 {
-                    float area = (tri->p1.x - tri->p0.x)*(tri->p2.y - tri->p0.y) -
-                                 (tri->p2.x - tri->p0.x)*(tri->p1.y - tri->p0.y);
+                    // Extraire les valeurs scalaires pour chaque pixel valide
+                    float w0_arr[8], w1_arr[8], w2_arr[8];
+                    _mm256_storeu_ps(w0_arr, w0_v);
+                    _mm256_storeu_ps(w1_arr, w1_v);
+                    _mm256_storeu_ps(w2_arr, w2_v);
 
-                    float invArea = 1.0f / area;
-
-                    float alpha = w1 * invArea;
-                    float beta  = w2 * invArea;
-                    float gamma = 1.0f - alpha - beta;
-
-                    float z = alpha * tri->z0 + beta * tri->z1 + gamma * tri->z2;
-
-                    int lx = x - x0;
-                    int ly = y - y0;
-                    int index = ly * TILE_SIZE + lx;
-
-                    if (z < zbuf[index])
+                    for (int k = 0; k < 8; k++)
                     {
-                        zbuf[index] = z;
+                        if (!(imask & (1 << k))) continue;
+                        int px = x + k;
+                        if (px > maxX) break;
 
-                        if (z < tile->minZ) tile->minZ = z;
-                        if (z > tile->maxZ) tile->maxZ = z;
+                        float alpha = w1_arr[k] * invArea;
+                        float beta  = w2_arr[k] * invArea;
+                        float gamma = 1.0f - alpha - beta;
 
-                        if (tri->zmin > tile->maxZ)
-                            continue;
+                        float z = alpha * tri->z0 + beta * tri->z1 + gamma * tri->z2;
 
-                        // Interpolation de la normale
-                        Vector3 n = {
-                            alpha * tri->n0.x + beta * tri->n1.x + gamma * tri->n2.x,
-                            alpha * tri->n0.y + beta * tri->n1.y + gamma * tri->n2.y,
-                            alpha * tri->n0.z + beta * tri->n1.z + gamma * tri->n2.z,
-                        };
-                        n = Vector3Normalize(n);
-                        n = Vector3Negate(n);
+                        int lx = px - x0;
+                        int ly = y  - y0;
+                        int index = ly * TILE_SIZE + lx;
 
-                        // Position 3D interpolée du pixel
-                        Vector3 pixelPos = {
-                            alpha * tri->v0.x + beta * tri->v1.x + gamma * tri->v2.x,
-                            alpha * tri->v0.y + beta * tri->v1.y + gamma * tri->v2.y,
-                            alpha * tri->v0.z + beta * tri->v1.z + gamma * tri->v2.z,
-                        };
+                        if (z < zbuf[index])
+                        {
+                            zbuf[index] = z;
 
-                        // Diffuse
-                        float dotNL = Vector3DotProduct(n, ctx->lightDir);
+                            // Interpolation normale
+                            Vector3 n = {
+                                alpha * tri->n0.x + beta * tri->n1.x + gamma * tri->n2.x,
+                                alpha * tri->n0.y + beta * tri->n1.y + gamma * tri->n2.y,
+                                alpha * tri->n0.z + beta * tri->n1.z + gamma * tri->n2.z,
+                            };
+                            n = Vector3Normalize(n);
+                            n = Vector3Negate(n);
 
-                        // Interpolation UV
-                        float u = alpha * tri->uv0.x + beta * tri->uv1.x + gamma * tri->uv2.x;
-                        float v = alpha * tri->uv0.y + beta * tri->uv1.y + gamma * tri->uv2.y;
-
-                        // Lire la normal map si disponible
-                        if (ctx->normalMap.data != NULL) {
-                            int nx = (int)(u * ctx->normalMap.width)  % ctx->normalMap.width;
-                            int ny = (int)(v * ctx->normalMap.height) % ctx->normalMap.height;
-                            if (nx < 0) nx += ctx->normalMap.width;
-                            if (ny < 0) ny += ctx->normalMap.height;
-
-                            Color nc = GetImageColor(ctx->normalMap, nx, ny);
-
-                            // Tangent space normal
-                            Vector3 nMap = {
-                                (nc.r / 255.0f) * 2.0f - 1.0f,
-                                (nc.g / 255.0f) * 2.0f - 1.0f,
-                                (nc.b / 255.0f) * 2.0f - 1.0f
+                            // Position 3D interpolée
+                            Vector3 pixelPos = {
+                                alpha * tri->v0.x + beta * tri->v1.x + gamma * tri->v2.x,
+                                alpha * tri->v0.y + beta * tri->v1.y + gamma * tri->v2.y,
+                                alpha * tri->v0.z + beta * tri->v1.z + gamma * tri->v2.z,
                             };
 
-                            // Transformer via TBN vers world space
-                            // T et B doivent être transformés avec la rotation aussi
-                            Vector3 T = tri->tangent;
-                            Vector3 B = tri->bitangent;
-                            Vector3 N = n;  // normale interpolée déjà en world space
+                            // UV
+                            float u = alpha * tri->uv0.x + beta * tri->uv1.x + gamma * tri->uv2.x;
+                            float v = alpha * tri->uv0.y + beta * tri->uv1.y + gamma * tri->uv2.y;
 
-                            n = Vector3Normalize((Vector3){
-                                T.x * nMap.x + B.x * nMap.y + N.x * nMap.z,
-                                T.y * nMap.x + B.y * nMap.y + N.y * nMap.z,
-                                T.z * nMap.x + B.z * nMap.y + N.z * nMap.z
-                            });
+                            // Normal map
+                            if (ctx->normalMap.data != NULL) {
+                                int nx = (int)(u * ctx->normalMap.width)  % ctx->normalMap.width;
+                                int ny = (int)(v * ctx->normalMap.height) % ctx->normalMap.height;
+                                if (nx < 0) nx += ctx->normalMap.width;
+                                if (ny < 0) ny += ctx->normalMap.height;
+
+                                Color nc = GetImageColor(ctx->normalMap, nx, ny);
+                                Vector3 nMap = {
+                                    (nc.r / 255.0f) * 2.0f - 1.0f,
+                                    (nc.g / 255.0f) * 2.0f - 1.0f,
+                                    (nc.b / 255.0f) * 2.0f - 1.0f
+                                };
+
+                                Vector3 T = tri->tangent;
+                                Vector3 B = tri->bitangent;
+                                Vector3 N = n;
+                                n = Vector3Normalize((Vector3){
+                                    T.x*nMap.x + B.x*nMap.y + N.x*nMap.z,
+                                    T.y*nMap.x + B.y*nMap.y + N.y*nMap.z,
+                                    T.z*nMap.x + B.z*nMap.y + N.z*nMap.z
+                                });
+                            }
+
+                            // Texture
+                            Color base;
+                            if (ctx->texImage.data == NULL) {
+                                base = tri->couleur;
+                            } else {
+                                int texX = (int)(u * ctx->texImage.width)  % ctx->texImage.width;
+                                int texY = (int)(v * ctx->texImage.height) % ctx->texImage.height;
+                                if (texX < 0) texX += ctx->texImage.width;
+                                if (texY < 0) texY += ctx->texImage.height;
+                                base = GetImageColor(ctx->texImage, texX, texY);
+                            }
+
+                            // Lighting
+                            float dotNL = Vector3DotProduct(n, ctx->lightDir);
+
+                            if (dotNL <= 0.0f) {
+                                int fbY = SCREEN_HEIGHT - y;
+                                if (fbY >= 0 && fbY < SCREEN_HEIGHT)
+                                    framebuffer[fbY * SCREEN_WIDTH + px] = (Color){
+                                        (unsigned char)(base.r * 0.2f),
+                                        (unsigned char)(base.g * 0.2f),
+                                        (unsigned char)(base.b * 0.2f),
+                                        255
+                                    };
+                                continue;
+                            }
+
+                            float diffuse = dotNL;
+                            Vector3 viewDir = Vector3Normalize(Vector3Subtract(ctx->cameraPos, pixelPos));
+                            Vector3 halfDir = Vector3Normalize(Vector3Add(ctx->lightDir, viewDir));
+                            float dotNH = fmaxf(Vector3DotProduct(n, halfDir), 0.0f);
+                            float spec = powf(dotNH, 64.0f);
+
+                            float ambient = 0.2f;
+                            float intensity = fminf(ambient + diffuse * 0.6f + spec * 3.0f, 1.0f);
+
+                            int r = (int)(base.r * intensity);
+                            int g = (int)(base.g * intensity);
+                            int b = (int)(base.b * intensity);
+
+                            float specIntensity = spec * 1.5f;
+                            r = (int)fminf(r + 255 * specIntensity, 255);
+                            g = (int)fminf(g + 255 * specIntensity, 255);
+                            b = (int)fminf(b + 255 * specIntensity, 255);
+
+                            int fbY = SCREEN_HEIGHT - y;
+                            if (fbY >= 0 && fbY < SCREEN_HEIGHT)
+                                framebuffer[fbY * SCREEN_WIDTH + px] = (Color){
+                                    (unsigned char)r, (unsigned char)g, (unsigned char)b, 255
+                                };
                         }
-
-                        // Échantillonnage texture (une seule fois)
-                        Color base;
-                        if (ctx->texImage.data == NULL) {
-                            base = tri->couleur;
-                        } else {
-                            int texX = (int)(u * ctx->texImage.width)  % ctx->texImage.width;
-                            int texY = (int)(v * ctx->texImage.height) % ctx->texImage.height;
-                            if (texX < 0) texX += ctx->texImage.width;
-                            if (texY < 0) texY += ctx->texImage.height;
-                            base = GetImageColor(ctx->texImage, texX, texY);
-                        }
-
-                        // Si la face est dos à la lumière → juste ambient
-                        if (dotNL <= 0.0f) {
-                            framebuffer[(SCREEN_HEIGHT - y) * SCREEN_WIDTH + x] = (Color){
-                                (unsigned char)(base.r * 0.2f),
-                                (unsigned char)(base.g * 0.2f),
-                                (unsigned char)(base.b * 0.2f),
-                                255
-                            };
-                            continue;  // pas de specular sur les faces dos à la lumière
-                        }
-
-                        float diffuse = dotNL;
-
-                        // Specular seulement sur les faces éclairées
-                        Vector3 viewDir = Vector3Normalize(Vector3Subtract(ctx->cameraPos, pixelPos));
-                        Vector3 halfDir = Vector3Normalize(Vector3Add(ctx->lightDir, viewDir));
-                        float dotNH = fmaxf(Vector3DotProduct(n, halfDir), 0.0f);
-                        float spec = powf(dotNH, 64.0f);
-
-                        float ambient = 0.2f;
-                        float intensity = fminf(ambient + diffuse * 0.6f + spec * 3.0f, 1.0f);
-
-                        // Couleur diffuse + ambient
-                        int r = (int)(base.r * intensity);
-                        int g = (int)(base.g * intensity);
-                        int b = (int)(base.b * intensity);
-
-                        // Ajouter le specular BLANC par dessus
-                        float specIntensity = spec * 1.5f;
-                        r = (int)fminf(r + 255 * specIntensity, 255);
-                        g = (int)fminf(g + 255 * specIntensity, 255);
-                        b = (int)fminf(b + 255 * specIntensity, 255);
-
-                        Color pixelColor = {(unsigned char)r, (unsigned char)g, (unsigned char)b, 255};
-
-                        framebuffer[(SCREEN_HEIGHT - y) * SCREEN_WIDTH + x] = pixelColor;
                     }
                 }
 
-                // incrément X
-                w0 += e0.A;
-                w1 += e1.A;
-                w2 += e2.A;
+                // Incrémenter w de 8 pixels
+                w0_v = _mm256_add_ps(w0_v, e0A_8);
+                w1_v = _mm256_add_ps(w1_v, e1A_8);
+                w2_v = _mm256_add_ps(w2_v, e2A_8);
             }
 
-            // incrément Y
+            // Incrément Y
             w0_row += e0.B;
             w1_row += e1.B;
             w2_row += e2.B;
@@ -932,7 +953,7 @@ int main(void)
     ctx.lightDir = Vector3Normalize((Vector3){ 1.0f, 1.0f, -1.0f });
     ctx.cameraPos = camera.position;
     ctx.texImage = LoadImage("rusty_metal_02_diff_1k.jpg");
-    ctx.normalMap = LoadImage("rusty_metal_02_nor_dx_1k.jpg");
+    ctx.normalMap = LoadImage("rusty_metal_02_nor_gl_1k.jpg");
 
     // Tableau de normales par sommet
     Vector3* smoothNormals = calloc(vertexCount, sizeof(Vector3));
@@ -1091,19 +1112,29 @@ int main(void)
             float duv2x = p->uv2.x - p->uv0.x;
             float duv2y = p->uv2.y - p->uv0.y;
 
-            float f = 1.0f / (duv1x * duv2y - duv2x * duv1y);
+            float denom = duv1x * duv2y - duv2x * duv1y;
 
-            p->tangent = Vector3Normalize((Vector3){
-                f * (duv2y * edge1.x - duv1y * edge2.x),
-                f * (duv2y * edge1.y - duv1y * edge2.y),
-                f * (duv2y * edge1.z - duv1y * edge2.z)
-            });
+            p->v0 = Vector3Transform(getVertex(mesh, i0), rotation);
+            p->v1 = Vector3Transform(getVertex(mesh, i1), rotation);
+            p->v2 = Vector3Transform(getVertex(mesh, i2), rotation);
 
-            p->bitangent = Vector3Normalize((Vector3){
-                f * (-duv2x * edge1.x + duv1x * edge2.x),
-                f * (-duv2x * edge1.y + duv1x * edge2.y),
-                f * (-duv2x * edge1.z + duv1x * edge2.z)
-            });
+            if (fabsf(denom) < 1e-6f) {
+                // Dégénéré → tangente par défaut
+                p->tangent   = (Vector3){1, 0, 0};
+                p->bitangent = (Vector3){0, 1, 0};
+            } else {
+                float f = 1.0f / denom;
+                p->tangent = Vector3Normalize((Vector3){
+                    f * (duv2y * edge1.x - duv1y * edge2.x),
+                    f * (duv2y * edge1.y - duv1y * edge2.y),
+                    f * (duv2y * edge1.z - duv1y * edge2.z)
+                });
+                p->bitangent = Vector3Normalize((Vector3){
+                    f * (-duv2x * edge1.x + duv1x * edge2.x),
+                    f * (-duv2x * edge1.y + duv1x * edge2.y),
+                    f * (-duv2x * edge1.z + duv1x * edge2.z)
+                });
+            }
         }
 
         Matrix view = GetCameraMatrix(camera);

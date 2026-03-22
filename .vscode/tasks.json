@@ -8,9 +8,9 @@
 			"args": [
 			"-I", "F:\\C++\\raylib\\include",
 			"F:\\C++\\Projets\\RayLib\\warnockRecursif\\warnock.c",
-			"-o", "warnock.exe",
+			"-o", "warnock.exe","-O2",
 			"-L", "F:\\C++\\raylib\\lib",
-			"-lraylib", "-lwinmm", "-lgdi32", "-lopengl32", "-luser32", "-lkernel32"
+			"-lraylib", "-lwinmm", "-lgdi32", "-lopengl32", "-luser32", "-lkernel32", "-mavx2", "-mfma"
 			],
 			"options": {
 				"cwd": "${fileDirname}"
