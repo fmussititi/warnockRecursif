@@ -1,0 +1,18 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Raylib Launch",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/warnock.exe",
+      "args": [],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}",
+      "environment": [],
+      "externalConsole": true,
+      "MIMode": "gdb",
+      "miDebuggerPath": "F:\\Cplusplus\\ucrt64\\bin\\gdb.exe"
+    }
+  ]
+}

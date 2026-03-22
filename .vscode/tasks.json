@@ -1,0 +1,25 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"type": "cppbuild",
+			"label": "build raylib warnock",
+			"command": "F:\\Cplusplus\\ucrt64\\bin\\gcc.exe",
+			"args": [
+			"-I", "F:\\C++\\raylib\\include",
+			"F:\\C++\\Projets\\RayLib\\warnockRecursif\\warnock.c",
+			"-o", "warnock.exe",
+			"-L", "F:\\C++\\raylib\\lib",
+			"-lraylib", "-lwinmm", "-lgdi32", "-lopengl32", "-luser32", "-lkernel32"
+			],
+			"options": {
+				"cwd": "${fileDirname}"
+			},
+			"problemMatcher": [
+				"$gcc"
+			],
+			"group": "build",
+			"detail": "compiler: F:\\Cplusplus\\ucrt64\\bin\\gcc.exe"
+		}
+	]
+}
