@@ -7,45 +7,19 @@
 #include <stdatomic.h>
 #include <pthread.h>
 #include <immintrin.h>
+#include "config.h"
 
 #define SCREEN_WIDTH 1600
 #define SCREEN_HEIGHT 900
 
-// Switch d'algorithme de rendu
-#define WARNOCK 0
-#define ZBUFFER 0
-#define TILES 1
-
 #pragma region Paramètres généraux et Variables globales
-
-                        //suzane.obj
-                        //susaneHiDef.obj
-                        //cube.obj
-                        //teapot.obj
-                        //teapotUV.obj
-                        //tankTri.obj
-                        //donut.obj
-                        //donutSimple.obj
-#define MODEL_NAME_FILE "susaneHiDef.obj"
-#define MODEL_PATH "./ressources/" MODEL_NAME_FILE
-
-#define CAMERA_POSITION_X 5.0     //camera.position = (Vector3){ 200.0f, 200.0f, 200.0f }; // pour tankTri
-#define CAMERA_POSITION_Y 5.0     //camera.position = (Vector3){ 10.0f, 10.0f, 10.0f }; // pour teapot
-#define CAMERA_POSITION_Z 5.0
-
-#define CAMERA_TARGET_X 0.0     
-#define CAMERA_TARGET_Y 0.0     
-#define CAMERA_TARGET_Z 0.0
 
 #define BACKFACE_CULLING 0
 #define CAMERA_NEAR 0.01f
 #define CAMERA_FAR  1000.0f
-#define FRUSTUM_CULLING  1
-#define BACKFACE_CULLING_WORD_SPACE 1
 
 // Parametres pour Warnock
 #define CONTOUR_ARBRE 1
-#define TREE_DEPTH 10
 #define MAX_POLY 10000
 #define REGION_TILE_SIZE 32
 
@@ -54,12 +28,7 @@
 #define TILE_SIZE 32
 #define MAX_TRI_PER_TILE 20000
 #define MAX_TILES 2000
-#define DEBUG_TILES 0
-#define TEXTURES 1
-#define TEXTURE_DIFF_NAME_FILE "rusty_metal_02_diff_1k.jpg"
-#define TEXTURE_DIFF_PATH "./ressources/" TEXTURE_DIFF_NAME_FILE
-#define TEXTURE_NORMAL_NAME_FILE "rusty_metal_02_nor_gl_1k.jpg"
-#define TEXTURE_NORMAL_PATH "./ressources/" TEXTURE_NORMAL_NAME_FILE
+
 
 int tilesX = SCREEN_WIDTH / TILE_SIZE;
 int tilesY = SCREEN_HEIGHT / TILE_SIZE;
@@ -428,7 +397,7 @@ void warnock(RenderContext* ctx, Region* r, int* indices, int count, int depth) 
     int width = r->x2 - r->x1;
     int height = r->y2 - r->y1;
 
-    if (depth >= TREE_DEPTH)
+    if (depth >= ctx->tree_depth)
     {
         int best = 0;
         float z = ctx->polys[indices[0]].zmin;
@@ -1079,30 +1048,32 @@ bool isBackFace(Vector3 v0, Vector3 v1, Vector3 v2, Vector3 cameraPos)
 
 int main(void)
 {
-#if WARNOCK
-    InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "Hybride : Warnock + ZBuffer rendering");
-#endif
 
-#if ZBUFFER
-    InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "ZBuffer rendering");
-#endif
+    // Charger la config au démarrage
+    Config cfg = loadConfig("config.ini");
 
-#if TILES
-    InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "Tiles rendering");
-#endif
+    if (cfg.warnock)
+        InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "Hybride : Warnock + ZBuffer rendering");
+
+    if (cfg.zbuffer)
+        InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "ZBuffer rendering");
+
+    if (cfg.tiles)
+        InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "Tiles rendering");
+
 
 #pragma region Initialisations
 /***********************************************************************************************************/
 /******************************************* INIT **********************************************************/
 
     Camera3D camera = { 0 };
-    camera.position = (Vector3){ CAMERA_POSITION_X, CAMERA_POSITION_Y, CAMERA_POSITION_Z };
-    camera.target = (Vector3){ CAMERA_TARGET_X, CAMERA_TARGET_Y, CAMERA_TARGET_Z };
+    camera.position = (Vector3){ cfg.cam_x, cfg.cam_y, cfg.cam_z };
+    camera.target = (Vector3){ cfg.target_x, cfg.target_y, cfg.target_z };
     camera.up = (Vector3){ 0.0f, -1.0f, 0.0f };
-    camera.fovy = 25.0f;
+    camera.fovy = cfg.fov;
     camera.projection = CAMERA_PERSPECTIVE;
 
-    Model model = LoadModel(MODEL_PATH);
+    Model model = LoadModel(cfg.model_path);
 
     Mesh mesh = model.meshes[0]; // On prend le premier mesh
 
@@ -1114,16 +1085,21 @@ int main(void)
     SetTargetFPS(60);
 
     RenderContext ctx;
-    ctx.lightDir = Vector3Normalize((Vector3){ 1.0f, 1.0f, -1.0f });
+    ctx.lightDir = Vector3Normalize((Vector3){ cfg.light_x, cfg.light_y, cfg.light_z });
     ctx.cameraPos = camera.position;
+    ctx.screenHeight = cfg.screen_height;
+    ctx.screenWidth = cfg.screen_width;
+    ctx.tree_depth = cfg.tree_depth;
 
-#if TEXTURES
-    ctx.texImage = LoadImage(TEXTURE_DIFF_PATH);
-    ctx.normalMap = LoadImage(TEXTURE_NORMAL_PATH);
-#else
-    ctx.texImage.data = NULL;
-    ctx.normalMap.data = NULL;
-#endif
+    if (cfg.textures_enabled) {
+        ctx.texImage  = LoadImage(cfg.tex_diffuse);
+        ctx.normalMap = LoadImage(cfg.tex_normal);
+    }
+    else
+    {
+        ctx.texImage.data = NULL;
+        ctx.normalMap.data = NULL;
+    }
 
     // Tableau de normales par sommet
     Vector3* smoothNormals = calloc(vertexCount, sizeof(Vector3));
@@ -1131,6 +1107,9 @@ int main(void)
     float* z = malloc(vertexCount * sizeof(float));
     Poly* PolyList = malloc(mesh.vertexCount/3 * sizeof(Poly));
     Poly *visiblePolys = malloc(mesh.triangleCount * sizeof(Poly));
+    float* zbuffer;
+    Image img;
+    Texture2D tex;
 
     for (int i = 0; i < mesh.vertexCount / 3; i++) {
         Poly p;
@@ -1139,21 +1118,20 @@ int main(void)
         PolyList[i] = p;
     }
 
-#if ZBUFFER
-    float* zbuffer = malloc(SCREEN_WIDTH * SCREEN_HEIGHT * sizeof(float));
-#endif
+    if (cfg.zbuffer)
+        zbuffer = malloc(SCREEN_WIDTH * SCREEN_HEIGHT * sizeof(float));
 
-#if TILES
-    Image img = GenImageColor(SCREEN_WIDTH, SCREEN_HEIGHT, RAYWHITE);
-    Texture2D tex = LoadTextureFromImage(img);
-    UnloadImage(img);
+    if (cfg.tiles){
+        img = GenImageColor(SCREEN_WIDTH, SCREEN_HEIGHT, RAYWHITE);
+        tex = LoadTextureFromImage(img);
+        UnloadImage(img);
 
-    // Init
-    pthread_barrier_init(&barrierStart, NULL, NUM_THREADS + 1);
-    pthread_barrier_init(&barrierEnd,   NULL, NUM_THREADS + 1);
+        // Init
+        pthread_barrier_init(&barrierStart, NULL, NUM_THREADS + 1);
+        pthread_barrier_init(&barrierEnd,   NULL, NUM_THREADS + 1);
 
-    initThreads(&ctx);
-#endif
+        initThreads(&ctx);
+        }
 
     // PASSE 1 : calculer une normale par triangle et l'accumuler sur ses sommets
     Vector3* faceNormals = calloc(vertexCount, sizeof(Vector3));
@@ -1331,11 +1309,10 @@ int main(void)
             Vector3 v1 = Vector3Transform(getVertex(mesh, i1), rotation);
             Vector3 v2 = Vector3Transform(getVertex(mesh, i2), rotation);
 
-#if BACKFACE_CULLING_WORD_SPACE
-            // ← BACKFACE CULLING (world space, avant projection)
-            if (isBackFace(v0, v1, v2, ctx.cameraPos))
-                continue;
-#endif
+            if (cfg.backface_culling)
+                // ← BACKFACE CULLING (world space, avant projection)
+                if (isBackFace(v0, v1, v2, ctx.cameraPos))
+                    continue;
 
             // ← FRUSTUM CULLING (AABB en world space)
             Vector3 aabbMin = {
@@ -1349,14 +1326,15 @@ int main(void)
                 fmaxf(v0.z, fmaxf(v1.z, v2.z))
             };
 
-#if FRUSTUM_CULLING
-            if (!aabbInFrustum(&frustum, aabbMin, aabbMax))
-                continue;
+            if (cfg.frustum_culling)
+            {
+                if (!aabbInFrustum(&frustum, aabbMin, aabbMax))
+                    continue;
 
-            // Test précis seulement si l'AABB passe
-            if (!triangleInFrustum(&frustum, v0, v1, v2))
-                continue;
-#endif
+                // Test précis seulement si l'AABB passe
+                if (!triangleInFrustum(&frustum, v0, v1, v2))
+                    continue;
+            }
 
             // passer en espace caméra
             v0 = Vector3Transform(v0, view);
@@ -1385,14 +1363,14 @@ int main(void)
                 Color base = PolyList[i].couleur;
                 //Color base = {200, 100, 50, 255}; // cuivre / terre cuite
                 p.couleur = base;
-#if !TILES
-                p.couleur = (Color){
-                    (unsigned char)(base.r * intensity),
-                    (unsigned char)(base.g * intensity),
-                    (unsigned char)(base.b * intensity),
-                    255
-                };
-#endif
+
+                if (!cfg.tiles)
+                    p.couleur = (Color){
+                        (unsigned char)(base.r * intensity),
+                        (unsigned char)(base.g * intensity),
+                        (unsigned char)(base.b * intensity),
+                        255
+                    };
 
                 // Transformer les normales comme les vertices
                 p.n0 = Vector3Normalize(Vector3Transform(getNormal(mesh, i0, smoothNormals), rotation));
@@ -1443,104 +1421,104 @@ int main(void)
         if (IsKeyDown(KEY_P))     camera.target.z += 1.0f;
         if (IsKeyDown(KEY_L))     camera.target.z -= 1.0f;
 
-#if WARNOCK
-        DrawText(TextFormat("Hybride : Warnock + ZBuffer, Profondeur de l'arbre = %d", TREE_DEPTH), 10, 10, 20, WHITE);
+        if (cfg.warnock){
+            DrawText(TextFormat("Hybride : Warnock + ZBuffer, Profondeur de l'arbre = %d", cfg.tree_depth), 10, 10, 20, WHITE);
 
-        Region root = {0,0,SCREEN_WIDTH,SCREEN_HEIGHT};
-        int indices[MAX_POLY];
-        for (int i = 0; i < polyCount; i++)
-            indices[i] = i;
+            Region root = {0,0,SCREEN_WIDTH,SCREEN_HEIGHT};
+            int indices[MAX_POLY];
+            for (int i = 0; i < polyCount; i++)
+                indices[i] = i;
 
-        ctx.rootIndices = indices;
-        warnock(&ctx, &root, indices, polyCount, 0);
-#endif
-
-#if ZBUFFER
-        DrawText("ZBuffer", 10, 10, 20, WHITE);
-
-        for (int i = 0; i < SCREEN_WIDTH * SCREEN_HEIGHT; i++)
-            zbuffer[i] = 1e9; // très loin
-
-        for (int i = 0; i < polyCount; i++)
-        {
-            //drawTriangleZ(&visiblePolys[i], zbuffer);
-            drawTriangleZ(&ctx.polys[i], zbuffer);
-        }
-#endif
-
-#if TILES
-        qsort(ctx.polys, ctx.polyCount, sizeof(Poly), compare_zmin);
-
-        for (int i = 0; i < tilesX * tilesY; i++){
-            tiles[i].minZ = 1e9f;
-            tiles[i].maxZ = -1e9f;
+            ctx.rootIndices = indices;
+            warnock(&ctx, &root, indices, polyCount, 0);
         }
 
-        binTriangles(&ctx);
+        if (cfg.zbuffer){
+            DrawText("ZBuffer", 10, 10, 20, WHITE);
 
-        renderFrame(&ctx);
-        UpdateTexture(tex, framebuffer);
-        DrawTexture(tex, 0, 0, WHITE);
+            for (int i = 0; i < SCREEN_WIDTH * SCREEN_HEIGHT; i++)
+                zbuffer[i] = 1e9; // très loin
 
-#if DEBUG_TILES
-        /*** DEBUG TILES ***/
-/*
-        // debug : tiles avec triangles
-        for (int ty = 0; ty < tilesY; ty++)
-        {
-            for (int tx = 0; tx < tilesX; tx++)
+            for (int i = 0; i < polyCount; i++)
             {
-                Tile* tile = &tiles[ty * tilesX + tx];
-
-                if (tile->count == 0) continue;
-
-                int x = tx * TILE_SIZE;
-                int y = ty * TILE_SIZE;
-
-                DrawRectangleLines(x, SCREEN_HEIGHT - (y + TILE_SIZE), TILE_SIZE, TILE_SIZE, GREEN);
-            }
-        }
-*/
-        // debug : densité par tiles
-        for (int ty = 0; ty < tilesY; ty++)
-        {
-            for (int tx = 0; tx < tilesX; tx++)
-            {
-                Tile* tile = &tiles[ty * tilesX + tx];
-
-                //if (tile->count == 0) continue;
-
-                int x = tx * TILE_SIZE;
-                int y = ty * TILE_SIZE;
-
-                int c = tile->count + 17;
-
-                unsigned char alpha = (unsigned char)Clamp(c * 10, 20, 200);
-
-                Color col = (Color){
-                    (unsigned char)(c * 5),  // rouge ↑ avec densité
-                    0,
-                    0,
-                    alpha
-                };
-
-                Color whiteText = (Color){
-                    (unsigned char)(c * 5),  // blanc ↑ avec densité
-                    (unsigned char)(c * 5),
-                    (unsigned char)(c * 5),
-                    alpha
-                };
-
-                DrawRectangleLinesEx((Rectangle){x, SCREEN_HEIGHT - (y + TILE_SIZE), TILE_SIZE, TILE_SIZE},1.5f, col);
-                DrawText(TextFormat("%d", tile->count), x+2, SCREEN_HEIGHT - y - 14, 10, whiteText);
+                //drawTriangleZ(&visiblePolys[i], zbuffer);
+                drawTriangleZ(&ctx.polys[i], zbuffer);
             }
         }
 
-        //debugDrawTileCoverage(&ctx);
-#endif
+        if (cfg.tiles){
+            qsort(ctx.polys, ctx.polyCount, sizeof(Poly), compare_zmin);
+
+            for (int i = 0; i < tilesX * tilesY; i++){
+                tiles[i].minZ = 1e9f;
+                tiles[i].maxZ = -1e9f;
+            }
+
+            binTriangles(&ctx);
+
+            renderFrame(&ctx);
+            UpdateTexture(tex, framebuffer);
+            DrawTexture(tex, 0, 0, WHITE);
+
+            if (cfg.debug_tiles){
+                /*** DEBUG TILES ***/
+                /*
+                // debug : tiles avec triangles
+                for (int ty = 0; ty < tilesY; ty++)
+                {
+                    for (int tx = 0; tx < tilesX; tx++)
+                    {
+                        Tile* tile = &tiles[ty * tilesX + tx];
+
+                        if (tile->count == 0) continue;
+
+                        int x = tx * TILE_SIZE;
+                        int y = ty * TILE_SIZE;
+
+                        DrawRectangleLines(x, SCREEN_HEIGHT - (y + TILE_SIZE), TILE_SIZE, TILE_SIZE, GREEN);
+                    }
+                }
+                */
+                // debug : densité par tiles
+                for (int ty = 0; ty < tilesY; ty++)
+                {
+                    for (int tx = 0; tx < tilesX; tx++)
+                    {
+                        Tile* tile = &tiles[ty * tilesX + tx];
+
+                        //if (tile->count == 0) continue;
+
+                        int x = tx * TILE_SIZE;
+                        int y = ty * TILE_SIZE;
+
+                        int c = tile->count + 17;
+
+                        unsigned char alpha = (unsigned char)Clamp(c * 10, 20, 200);
+
+                        Color col = (Color){
+                            (unsigned char)(c * 5),  // rouge ↑ avec densité
+                            0,
+                            0,
+                            alpha
+                        };
+
+                        Color whiteText = (Color){
+                            (unsigned char)(c * 5),  // blanc ↑ avec densité
+                            (unsigned char)(c * 5),
+                            (unsigned char)(c * 5),
+                            alpha
+                        };
+
+                        DrawRectangleLinesEx((Rectangle){x, SCREEN_HEIGHT - (y + TILE_SIZE), TILE_SIZE, TILE_SIZE},1.5f, col);
+                        DrawText(TextFormat("%d", tile->count), x+2, SCREEN_HEIGHT - y - 14, 10, whiteText);
+                    }
+                }
+
+                //debugDrawTileCoverage(&ctx);
+            }
 
         DrawText("Tiles", 10, 10, 20, WHITE);
-#endif
+        }
 
         DrawText(TextFormat("FPS = %d", GetFPS()),
          10, 40, 20, WHITE);
@@ -1569,9 +1547,9 @@ int main(void)
     free(PolyList);
     free(visiblePolys);
 
-#if ZBUFFER
-    free(zbuffer);
-#endif
+    if (cfg.zbuffer)
+        free(zbuffer);
+
 
     UnloadModel(model);
     if (ctx.texImage.data)  UnloadImage(ctx.texImage);

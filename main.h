@@ -40,6 +40,8 @@ typedef struct {
 
     int screenWidth;
     int screenHeight;
+
+    int tree_depth;
 } RenderContext;
 
 typedef struct {
