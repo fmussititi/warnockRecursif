@@ -33,6 +33,10 @@ typedef struct {
     int polyCount;
     int* rootIndices;
     Vector3 lightDir;
+    float ambient;
+    float diffuse;
+    float specular;
+    float shininess;
     Vector3 cameraPos;
 
     Image texImage;
@@ -42,6 +46,8 @@ typedef struct {
     int screenHeight;
 
     int tree_depth;
+    int contour_arbre;
+    int max_poly;
 } RenderContext;
 
 typedef struct {

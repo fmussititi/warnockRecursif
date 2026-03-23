@@ -19,8 +19,6 @@
 #define CAMERA_FAR  1000.0f
 
 // Parametres pour Warnock
-#define CONTOUR_ARBRE 1
-#define MAX_POLY 10000
 #define REGION_TILE_SIZE 32
 
 // Parametres pour Tiles
@@ -393,7 +391,7 @@ void warnock(RenderContext* ctx, Region* r, int* indices, int count, int depth) 
     if (!r) return;
 
     int left = r->x1;
-    int top = SCREEN_HEIGHT - r->y2;
+    int top = ctx->screenHeight - r->y2;
     int width = r->x2 - r->x1;
     int height = r->y2 - r->y1;
 
@@ -411,20 +409,21 @@ void warnock(RenderContext* ctx, Region* r, int* indices, int count, int depth) 
         }
         //DrawRectangle(left, top, width, height, ctx->polys[indices[best]].couleur);
         drawRegionZBuffer(r, ctx->polys, indices, count);
-#if CONTOUR_ARBRE == 1
-        //DrawRectangleLines(left, top, width, height, ctx->polys[indices[best]].couleur);
-#endif
+        if (ctx->contour_arbre){
+            //DrawRectangleLines(left, top, width, height, ctx->polys[indices[best]].couleur);
+        }
+
         return;
     }
 
-    int localIndices[MAX_POLY];
+    int localIndices[ctx->max_poly];
     int localCount = 0;
 
     for (int i = 0; i < count; i++)
     {
         int idx = indices[i];
 
-        if (localCount >= MAX_POLY)
+        if (localCount >= ctx->max_poly)
             break;
         
         if (!ctx->polys[idx].visible) continue;
@@ -441,9 +440,9 @@ void warnock(RenderContext* ctx, Region* r, int* indices, int count, int depth) 
 
     // 1. aucun triangle
     if (localCount == 0) {
-#if CONTOUR_ARBRE == 1
-        DrawRectangleLines(left, top, width, height, RED);
-#endif
+        if (ctx->tree_depth){
+            DrawRectangleLines(left, top, width, height, RED);
+        }
         return;
     }
 
@@ -755,12 +754,12 @@ void drawTile(RenderContext* ctx, int tx, int ty)
                             float dotNL = Vector3DotProduct(n, ctx->lightDir);
 
                             if (dotNL <= 0.0f) {
-                                int fbY = SCREEN_HEIGHT - y;
-                                if (fbY >= 0 && fbY < SCREEN_HEIGHT)
-                                    framebuffer[fbY * SCREEN_WIDTH + px] = (Color){
-                                        (unsigned char)(base.r * 0.2f),
-                                        (unsigned char)(base.g * 0.2f),
-                                        (unsigned char)(base.b * 0.2f),
+                                int fbY = ctx->screenHeight - y;
+                                if (fbY >= 0 && fbY < ctx->screenHeight)
+                                    framebuffer[fbY * ctx->screenWidth + px] = (Color){
+                                        (unsigned char)(base.r * ctx->ambient),
+                                        (unsigned char)(base.g * ctx->ambient),
+                                        (unsigned char)(base.b * ctx->ambient),
                                         255
                                     };
                                 continue;
@@ -770,23 +769,23 @@ void drawTile(RenderContext* ctx, int tx, int ty)
                             Vector3 viewDir = Vector3Normalize(Vector3Subtract(ctx->cameraPos, pixelPos));
                             Vector3 halfDir = Vector3Normalize(Vector3Add(ctx->lightDir, viewDir));
                             float dotNH = fmaxf(Vector3DotProduct(n, halfDir), 0.0f);
-                            float spec = powf(dotNH, 64.0f);
+                            float spec = powf(dotNH, ctx->shininess);
 
-                            float ambient = 0.2f;
-                            float intensity = fminf(ambient + diffuse * 0.6f + spec * 3.0f, 1.0f);
+                            float ambient = ctx->ambient;
+                            float intensity = fminf(ambient + diffuse * ctx->diffuse + spec * ctx->specular, 1.0f);
 
                             int r = (int)(base.r * intensity);
                             int g = (int)(base.g * intensity);
                             int b = (int)(base.b * intensity);
 
-                            float specIntensity = spec * 1.5f;
+                            float specIntensity = spec * ctx->specular;
                             r = (int)fminf(r + 255 * specIntensity, 255);
                             g = (int)fminf(g + 255 * specIntensity, 255);
                             b = (int)fminf(b + 255 * specIntensity, 255);
 
-                            int fbY = SCREEN_HEIGHT - y;
-                            if (fbY >= 0 && fbY < SCREEN_HEIGHT)
-                                framebuffer[fbY * SCREEN_WIDTH + px] = (Color){
+                            int fbY = ctx->screenHeight - y;
+                            if (fbY >= 0 && fbY < ctx->screenHeight)
+                                framebuffer[fbY * ctx->screenWidth + px] = (Color){
                                     (unsigned char)r, (unsigned char)g, (unsigned char)b, 255
                                 };
                         }
@@ -846,7 +845,7 @@ void debugDrawTileCoverage(RenderContext* ctx)
 
                 DrawRectangle(
                     x,
-                    SCREEN_HEIGHT - (y + TILE_SIZE),
+                    ctx->screenHeight - (y + TILE_SIZE),
                     TILE_SIZE,
                     TILE_SIZE,
                     col
@@ -1090,6 +1089,12 @@ int main(void)
     ctx.screenHeight = cfg.screen_height;
     ctx.screenWidth = cfg.screen_width;
     ctx.tree_depth = cfg.tree_depth;
+    ctx.contour_arbre = cfg.contour_arbre;
+    ctx.max_poly = cfg.max_poly;
+    ctx.ambient = cfg.ambient;
+    ctx.diffuse = cfg.diffuse;
+    ctx.shininess = cfg.shininess;
+    ctx.specular = cfg.specular;
 
     if (cfg.textures_enabled) {
         ctx.texImage  = LoadImage(cfg.tex_diffuse);
@@ -1238,12 +1243,12 @@ int main(void)
 
             // écran
             p->minX = fmaxf(0.0f, minX);
-            p->maxX = fminf(SCREEN_WIDTH-1, maxX);
+            p->maxX = fminf(ctx.screenWidth-1, maxX);
             p->minY = fmaxf(0.0f, minY);
-            p->maxY = fminf(SCREEN_HEIGHT-1, maxY);
+            p->maxY = fminf(ctx.screenHeight-1, maxY);
 
-            if (p->maxX < 0 || p->minX > SCREEN_WIDTH-1 ||
-                p->maxY < 0 || p->minY > SCREEN_HEIGHT-1)
+            if (p->maxX < 0 || p->minX > ctx.screenWidth-1 ||
+                p->maxY < 0 || p->minY > ctx.screenHeight-1)
             {
                 p->visible = false;
                 continue;
@@ -1424,8 +1429,8 @@ int main(void)
         if (cfg.warnock){
             DrawText(TextFormat("Hybride : Warnock + ZBuffer, Profondeur de l'arbre = %d", cfg.tree_depth), 10, 10, 20, WHITE);
 
-            Region root = {0,0,SCREEN_WIDTH,SCREEN_HEIGHT};
-            int indices[MAX_POLY];
+            Region root = {0,0,ctx.screenWidth,ctx.screenHeight};
+            int indices[ctx.max_poly];
             for (int i = 0; i < polyCount; i++)
                 indices[i] = i;
 
@@ -1436,7 +1441,7 @@ int main(void)
         if (cfg.zbuffer){
             DrawText("ZBuffer", 10, 10, 20, WHITE);
 
-            for (int i = 0; i < SCREEN_WIDTH * SCREEN_HEIGHT; i++)
+            for (int i = 0; i < ctx.screenWidth * ctx.screenHeight; i++)
                 zbuffer[i] = 1e9; // très loin
 
             for (int i = 0; i < polyCount; i++)
@@ -1475,7 +1480,7 @@ int main(void)
                         int x = tx * TILE_SIZE;
                         int y = ty * TILE_SIZE;
 
-                        DrawRectangleLines(x, SCREEN_HEIGHT - (y + TILE_SIZE), TILE_SIZE, TILE_SIZE, GREEN);
+                        DrawRectangleLines(x, ctx.screenHeight - (y + TILE_SIZE), TILE_SIZE, TILE_SIZE, GREEN);
                     }
                 }
                 */
@@ -1509,8 +1514,8 @@ int main(void)
                             alpha
                         };
 
-                        DrawRectangleLinesEx((Rectangle){x, SCREEN_HEIGHT - (y + TILE_SIZE), TILE_SIZE, TILE_SIZE},1.5f, col);
-                        DrawText(TextFormat("%d", tile->count), x+2, SCREEN_HEIGHT - y - 14, 10, whiteText);
+                        DrawRectangleLinesEx((Rectangle){x, ctx.screenHeight - (y + TILE_SIZE), TILE_SIZE, TILE_SIZE},1.5f, col);
+                        DrawText(TextFormat("%d", tile->count), x+2, ctx.screenHeight - y - 14, 10, whiteText);
                     }
                 }
 

@@ -42,6 +42,7 @@ typedef struct {
 
     // Warnock
     int tree_depth;
+    int contour_arbre;
     int max_poly;
 
 } Config;
@@ -63,8 +64,8 @@ Config loadConfig(const char* filename)
         .frustum_culling = 1,
         .backface_culling = 1,
         .light_x        = 1.0f, .light_y = 1.0f, .light_z = -1.0f,
-        .ambient        = 0.2f, .diffuse = 0.6f,
-        .specular       = 1.5f, .shininess = 64.0f,
+        .ambient  = 0.2f, .diffuse = 0.6f,
+        .specular = 1.5f, .shininess = 64.0f,
         .textures_enabled = 1,
         .tex_diffuse    = "./ressources/rusty_metal_02_diff_1k.jpg",
         .tex_normal     = "./ressources/rusty_metal_02_nor_gl_1k.jpg",
@@ -73,6 +74,7 @@ Config loadConfig(const char* filename)
         .max_tri_per_tile = 20000,
         .debug_tiles    = 0,
         .tree_depth     = 10,
+        .contour_arbre  = 1,
         .max_poly       = 10000
     };
 
@@ -100,7 +102,7 @@ Config loadConfig(const char* filename)
         while (*v == ' ') v++;
 
         // Parser les clés
-        if      (!strcmp(k, "warnock"))          cfg.warnock           = atoi(v);
+        if      (!strcmp(k, "warnock"))           cfg.warnock           = atoi(v);
         else if (!strcmp(k, "zbuffer"))           cfg.zbuffer           = atoi(v);
         else if (!strcmp(k, "tiles"))             cfg.tiles             = atoi(v);
         else if (!strcmp(k, "screen_width"))      cfg.screen_width      = atoi(v);
@@ -120,10 +122,10 @@ Config loadConfig(const char* filename)
         else if (!strcmp(k, "dir_x"))             cfg.light_x           = atof(v);
         else if (!strcmp(k, "dir_y"))             cfg.light_y           = atof(v);
         else if (!strcmp(k, "dir_z"))             cfg.light_z           = atof(v);
-        else if (!strcmp(k, "ambient"))           cfg.ambient           = atof(v);
-        else if (!strcmp(k, "diffuse"))           cfg.diffuse           = atof(v);
-        else if (!strcmp(k, "specular"))          cfg.specular          = atof(v);
-        else if (!strcmp(k, "shininess"))         cfg.shininess         = atof(v);
+        else if (!strcmp(k, "ambient_light"))     cfg.ambient           = atof(v);
+        else if (!strcmp(k, "diffuse_light"))     cfg.diffuse           = atof(v);
+        else if (!strcmp(k, "specular_light"))    cfg.specular          = atof(v);
+        else if (!strcmp(k, "shininess_light"))   cfg.shininess         = atof(v);
         else if (!strcmp(k, "enabled"))           cfg.textures_enabled  = atoi(v);
         else if (!strcmp(k, "diffuse_tex"))       strncpy(cfg.tex_diffuse, v, 255);
         else if (!strcmp(k, "normal_tex"))        strncpy(cfg.tex_normal,  v, 255);
@@ -132,6 +134,7 @@ Config loadConfig(const char* filename)
         else if (!strcmp(k, "max_tri_per_tile"))  cfg.max_tri_per_tile  = atoi(v);
         else if (!strcmp(k, "debug_tiles"))       cfg.debug_tiles       = atoi(v);
         else if (!strcmp(k, "tree_depth"))        cfg.tree_depth        = atoi(v);
+        else if (!strcmp(k, "contour_arbre"))     cfg.contour_arbre        = atoi(v);
         else if (!strcmp(k, "max_poly"))          cfg.max_poly          = atoi(v);
     }
 
