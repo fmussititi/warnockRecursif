@@ -54,7 +54,7 @@ Un moteur de rendu 3D software implémenté entièrement sur CPU en C, avec Rayl
 ## Compilation
 
 ```bash
-gcc main.c -o softrenderer -lraylib -lm -lpthread -Wall
+gcc warnock.c -O2 -mavx2 -mfma -o softrenderer -lraylib -lm -lpthread
 ```
 
 Ou avec un Makefile :

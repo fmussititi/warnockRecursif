@@ -12,12 +12,17 @@
 
 #define SCREEN_WIDTH 1600
 #define SCREEN_HEIGHT 900
-#define BACKFACECULLING 0
+
+#define BACKFACE_CULLING 0
+#define CAMERA_NEAR 0.01f
+#define CAMERA_FAR  1000.0f
+#define FRUSTUM_CULLING  1
+#define BACKFACE_CULLING_WORD_SPACE 1
 
 // Switch rendu type Warnock
 #define WARNOCK 0
 #define CONTOUR_ARBRE 1
-#define TREE_DEPTH 8
+#define TREE_DEPTH 10
 #define MAX_POLY 10000
 #define REFION_TILE_SIZE 32
 
@@ -76,7 +81,8 @@ Color couleurAleatoire() {
 }
 
 
-//******************************** Fonctions pour Warnock renderin ***************************************/
+/***********************************************************************************************************/
+//******************************** Fonctions pour Warnock rendering ****************************************/
 
 void subdivise(Region* r, Region regions[4]) {
     regions[0] = (Region){r->x1, (r->y1 + r->y2)/2, (r->x1 + r->x2)/2, r->y2};
@@ -430,9 +436,7 @@ void warnock(RenderContext* ctx, Region* r, int* indices, int count, int depth) 
 }
 
 /***********************************************************************************************************/
-
-
-/****************************************Fonction pour ZBuffer rendering ***********************************/
+/*************************************** Fonction pour ZBuffer rendering ***********************************/
 
 //** Dessin d'un triangle dans le zbuffer **/
 void drawTriangleZ(Poly* tri, float* zbuffer)
@@ -486,8 +490,10 @@ void drawTriangleZ(Poly* tri, float* zbuffer)
         }
     }
 }
-/***********************************************************************************************************/
 
+
+
+/***********************************************************************************************************/
 /******************************** Fonctions pour Tiles rendering *******************************************/
 
 void binTriangles(RenderContext* ctx)
@@ -880,6 +886,105 @@ void renderFrame(RenderContext* ctx) {
 
 
 /***********************************************************************************************************/
+//*********************************** Gestion du frustum culling *******************************************/
+
+typedef struct {
+    Vector3 normal;
+    float   d;
+} Plane;
+
+typedef struct {
+    Plane planes[6]; // left, right, bottom, top, near, far
+} Frustum;
+
+// Extraire les plans depuis la matrice ViewProjection
+Frustum extractFrustum(Matrix vp)
+{
+    Frustum f;
+
+    // Left
+    f.planes[0].normal = (Vector3){ vp.m3 + vp.m0, vp.m7 + vp.m4, vp.m11 + vp.m8 };
+    f.planes[0].d      = vp.m15 + vp.m12;
+
+    // Right
+    f.planes[1].normal = (Vector3){ vp.m3 - vp.m0, vp.m7 - vp.m4, vp.m11 - vp.m8 };
+    f.planes[1].d      = vp.m15 - vp.m12;
+
+    // Bottom
+    f.planes[2].normal = (Vector3){ vp.m3 + vp.m1, vp.m7 + vp.m5, vp.m11 + vp.m9 };
+    f.planes[2].d      = vp.m15 + vp.m13;
+
+    // Top
+    f.planes[3].normal = (Vector3){ vp.m3 - vp.m1, vp.m7 - vp.m5, vp.m11 - vp.m9 };
+    f.planes[3].d      = vp.m15 - vp.m13;
+
+    // Near
+    f.planes[4].normal = (Vector3){ vp.m3 + vp.m2, vp.m7 + vp.m6, vp.m11 + vp.m10 };
+    f.planes[4].d      = vp.m15 + vp.m14;
+
+    // Far
+    f.planes[5].normal = (Vector3){ vp.m3 - vp.m2, vp.m7 - vp.m6, vp.m11 - vp.m10 };
+    f.planes[5].d      = vp.m15 - vp.m14;
+
+    // Normaliser les plans
+    for (int i = 0; i < 6; i++) {
+        float len = Vector3Length(f.planes[i].normal);
+        f.planes[i].normal = Vector3Scale(f.planes[i].normal, 1.0f / len);
+        f.planes[i].d     /= len;
+    }
+
+    return f;
+}
+
+
+// Retourne false si l'AABB est complètement hors du frustum
+bool aabbInFrustum(Frustum* f, Vector3 aabbMin, Vector3 aabbMax)
+{
+    for (int i = 0; i < 6; i++)
+    {
+        Vector3 n = f->planes[i].normal;
+
+        // Point le plus proche du plan dans la direction de la normale
+        // = point "positif" de l'AABB
+        Vector3 pPos = {
+            n.x >= 0 ? aabbMax.x : aabbMin.x,
+            n.y >= 0 ? aabbMax.y : aabbMin.y,
+            n.z >= 0 ? aabbMax.z : aabbMin.z
+        };
+
+        // Si ce point est derrière le plan → AABB entièrement dehors
+        float dist = Vector3DotProduct(n, pPos) + f->planes[i].d;
+        if (dist < 0)
+            return false;
+    }
+    return true; // AABB dans le frustum (ou partiellement)
+}
+
+// Construire la matrice de projection perspective
+Matrix buildProjectionMatrix(Camera3D camera)
+{
+    float aspect = (float)SCREEN_WIDTH / (float)SCREEN_HEIGHT;
+    float fovy   = camera.fovy * DEG2RAD;
+    float near   = 0.01f;
+    float far    = 1000.0f;
+
+    return MatrixPerspective(fovy, aspect, near, far);
+}
+
+bool isBackFace(Vector3 v0, Vector3 v1, Vector3 v2, Vector3 cameraPos)
+{
+    Vector3 e1     = Vector3Subtract(v1, v0);
+    Vector3 e2     = Vector3Subtract(v2, v0);
+    Vector3 normal = Vector3CrossProduct(e1, e2);
+
+    // Vecteur du triangle vers la caméra
+    Vector3 toCamera = Vector3Subtract(cameraPos, v0);
+
+    // Si la normale pointe dans la direction opposée à la caméra → face arrière
+    return Vector3DotProduct(normal, toCamera) >= 0;
+}
+
+/***********************************************************************************************************/
 
 Vector3 getNormal(Mesh mesh, int index, Vector3* smoothNormals) {
     /*if (mesh.normals)  // normales du fichier si disponibles
@@ -909,6 +1014,9 @@ Vector2 getUV(Mesh mesh, int index) {
     };
 }
 
+
+/***********************************************************************************************************/
+
 int main(void)
 {
 #if WARNOCK
@@ -924,19 +1032,19 @@ int main(void)
 #endif
 
     Camera3D camera = { 0 };
-    //camera.position = (Vector3){ 10.0f, -10.0f, 140.0f }; // pour tankTri
-    //camera.position = (Vector3){ 10.0f, 10.0f, 10.0f }; // pour teapot
-    camera.position = (Vector3){ 5.0f, 5.0f, 5.0f };
+    //camera.position = (Vector3){ 200.0f, 200.0f, 200.0f }; // pour tankTri
+    camera.position = (Vector3){ 10.0f, 10.0f, 10.0f }; // pour teapot
+    //camera.position = (Vector3){ 5.0f, 5.0f, 5.0f };
     camera.target = (Vector3){ 0.0f, 0.0f, 0.0f };
     camera.up = (Vector3){ 0.0f, -1.0f, 0.0f };
     camera.fovy = 25.0f;
     camera.projection = CAMERA_PERSPECTIVE;
 
     //Model model = LoadModel("suzane.obj");
-    Model model = LoadModel("susaneHiDef.obj");
+    //Model model = LoadModel("susaneHiDef.obj");
     //Model model = LoadModel("cube.obj");
     //Model model = LoadModel("teapot.obj");
-    //Model model = LoadModel("teapotUV.obj");
+    Model model = LoadModel("teapotUV.obj");
     //Model model = LoadModel("tankTri.obj");
     //Model model = LoadModel("donut.obj");
     //Model model = LoadModel("donutSimple.obj");
@@ -968,6 +1076,12 @@ int main(void)
         p.couleur = couleurAleatoire();
         PolyList[i] = p;
     }
+
+    // Frustum culling
+    Matrix proj    = buildProjectionMatrix(camera);
+    Matrix view    = GetCameraMatrix(camera);
+    Matrix vp      = MatrixMultiply(view, proj);  // ← view PUIS proj
+    Frustum frustum = extractFrustum(vp);
 
 #if ZBUFFER
     float* zbuffer = malloc(SCREEN_WIDTH * SCREEN_HEIGHT * sizeof(float));
@@ -1150,6 +1264,29 @@ int main(void)
             Vector3 v1 = Vector3Transform(getVertex(mesh, i1), rotation);
             Vector3 v2 = Vector3Transform(getVertex(mesh, i2), rotation);
 
+#if BACKFACE_CULLING_WORD_SPACE
+            // ← BACKFACE CULLING (world space, avant projection)
+            if (isBackFace(v0, v1, v2, ctx.cameraPos))
+                continue;
+#endif
+
+            // ← FRUSTUM CULLING (AABB en world space)
+            Vector3 aabbMin = {
+                fminf(v0.x, fminf(v1.x, v2.x)),
+                fminf(v0.y, fminf(v1.y, v2.y)),
+                fminf(v0.z, fminf(v1.z, v2.z))
+            };
+            Vector3 aabbMax = {
+                fmaxf(v0.x, fmaxf(v1.x, v2.x)),
+                fmaxf(v0.y, fmaxf(v1.y, v2.y)),
+                fmaxf(v0.z, fmaxf(v1.z, v2.z))
+            };
+
+#if FRUSTUM_CULLING
+            if (!aabbInFrustum(&frustum, aabbMin, aabbMax))
+                continue;
+#endif
+
             // passer en espace caméra
             v0 = Vector3Transform(v0, view);
             v1 = Vector3Transform(v1, view);
@@ -1166,7 +1303,7 @@ int main(void)
             intensity = fmaxf(intensity, ambient);
 
             if (intensity < 0) intensity = 0;
-#if BACKFACECULLING
+#if BACKFACE_CULLING
             if (normal.z < 0)
             {
 #endif
@@ -1199,18 +1336,40 @@ int main(void)
                 p.bitangent = Vector3Normalize(Vector3Transform(p.bitangent, rotation));
 
                 visiblePolys[inc++] = p;
-#if BACKFACECULLING
+#if BACKFACE_CULLING
             }
 #endif
         }
         int polyCount = inc;
 
+        static int displayTotal   = 0;
+        static int displayRendus  = 0;
+        static int displayRejetes = 0;
+        static int frameCounter   = 0;
+
+        frameCounter++;
+        if (frameCounter % 100 == 0)  // mise à jour toutes les 30 frames
+        {
+            displayTotal   = mesh.triangleCount;
+            displayRendus  = polyCount;
+            displayRejetes = mesh.triangleCount - polyCount;
+        }
+
+        if (IsKeyDown(KEY_UP))    camera.position.y += 10.0f;
+        if (IsKeyDown(KEY_DOWN))  camera.position.y -= 10.0f;
+        if (IsKeyDown(KEY_RIGHT)) camera.position.x += 10.0f;
+        if (IsKeyDown(KEY_LEFT))  camera.position.x -= 10.0f;
+        if (IsKeyDown(KEY_W))     camera.position.z -= 10.0f;
+        if (IsKeyDown(KEY_S))     camera.position.z += 10.0f;
+
 #if WARNOCK
         DrawText("Hybride : Warnock + ZBuffer", 10, 10, 20, WHITE);
         DrawText(TextFormat("Profondeur de l'arbre = %d | FPS = %d", TREE_DEPTH, GetFPS()),
          10, 40, 20, WHITE);
-        DrawText(TextFormat("Nombre de triangles = %d", polyCount),
-         10, 70, 20, WHITE);
+
+        DrawText(TextFormat("Triangles total  : %d", displayTotal), 10, 70, 20, WHITE);
+        DrawText(TextFormat("Triangles rendus : %d", displayRendus),  10, 95, 20, WHITE);
+        DrawText(TextFormat("Triangles rejetés: %d", displayRejetes), 10, 120, 20, WHITE);
 
         Region root = {0,0,SCREEN_WIDTH,SCREEN_HEIGHT};
         int indices[MAX_POLY];
@@ -1227,8 +1386,10 @@ int main(void)
         DrawText("ZBuffer", 10, 10, 20, WHITE);
         DrawText(TextFormat("FPS = %d", GetFPS()),
          10, 40, 20, WHITE);
-        DrawText(TextFormat("Nombre de triangles = %d", polyCount),
-         10, 70, 20, WHITE);
+
+        DrawText(TextFormat("Triangles total  : %d", displayTotal), 10, 70, 20, WHITE);
+        DrawText(TextFormat("Triangles rendus : %d", displayRendus),  10, 95, 20, WHITE);
+        DrawText(TextFormat("Triangles rejetés: %d", displayRejetes), 10, 120, 20, WHITE);
 
         for (int i = 0; i < SCREEN_WIDTH * SCREEN_HEIGHT; i++)
             zbuffer[i] = 1e9; // très loin
@@ -1249,13 +1410,6 @@ int main(void)
             tiles[i].minZ = 1e9f;
             tiles[i].maxZ = -1e9f;
         }
-
-        if (IsKeyDown(KEY_UP))    camera.position.y += 10.0f;
-        if (IsKeyDown(KEY_DOWN))  camera.position.y -= 10.0f;
-        if (IsKeyDown(KEY_RIGHT)) camera.position.x += 10.0f;
-        if (IsKeyDown(KEY_LEFT))  camera.position.x -= 10.0f;
-        if (IsKeyDown(KEY_W))     camera.position.z -= 10.0f;
-        if (IsKeyDown(KEY_S))     camera.position.z += 10.0f;
 
         binTriangles(&ctx);
 
@@ -1323,13 +1477,15 @@ int main(void)
         DrawText("Tiles", 10, 10, 20, WHITE);
         DrawText(TextFormat("FPS = %d", GetFPS()),
          10, 40, 20, WHITE);
-        DrawText(TextFormat("Nombre de triangles = %d", polyCount),
-         10, 70, 20, WHITE);
+
+        DrawText(TextFormat("Triangles total  : %d", displayTotal), 10, 70, 20, WHITE);
+        DrawText(TextFormat("Triangles rendus : %d", displayRendus),  10, 95, 20, WHITE);
+        DrawText(TextFormat("Triangles rejetés: %d", displayRejetes), 10, 120, 20, WHITE);
 
         // Afficher la position pour la noter
         DrawText(TextFormat("pos: %.1f %.1f %.1f", 
             camera.position.x, camera.position.y, camera.position.z), 
-            10, 100, 20, RED);
+            10, 150, 20, RED);
 #endif
 
         EndDrawing();
