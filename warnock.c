@@ -32,7 +32,7 @@
 // Switch rendu type Tiles
 #define TILES 1
 #define TILE_SIZE 32
-#define DEBUG_TILES 0
+#define DEBUG_TILES 1
 
 int tilesX = SCREEN_WIDTH / TILE_SIZE;
 int tilesY = SCREEN_HEIGHT / TILE_SIZE;
@@ -1001,6 +1001,26 @@ bool aabbInFrustum(Frustum* f, Vector3 aabbMin, Vector3 aabbMax)
     return true; // AABB dans le frustum (ou partiellement)
 }
 
+// Test précis : les 3 sommets du triangle contre chaque plan
+bool triangleInFrustum(Frustum* f, Vector3 v0, Vector3 v1, Vector3 v2)
+{
+    for (int i = 0; i < 6; i++)
+    {
+        Vector3 n = f->planes[i].normal;
+        float d   = f->planes[i].d;
+
+        // Distance de chaque sommet au plan
+        float d0 = Vector3DotProduct(n, v0) + d;
+        float d1 = Vector3DotProduct(n, v1) + d;
+        float d2 = Vector3DotProduct(n, v2) + d;
+
+        // Si les 3 sommets sont derrière ce plan → triangle dehors
+        if (d0 < 0 && d1 < 0 && d2 < 0)
+            return false;
+    }
+    return true;
+}
+
 // Construire la matrice de projection perspective
 Matrix buildProjectionMatrix(Camera3D camera)
 {
@@ -1052,7 +1072,7 @@ int main(void)
     Camera3D camera = { 0 };
     //camera.position = (Vector3){ 200.0f, 200.0f, 200.0f }; // pour tankTri
     //camera.position = (Vector3){ 10.0f, 10.0f, 10.0f }; // pour teapot
-    camera.position = (Vector3){ 5.0f, 5.0f, 5.0f };
+    camera.position = (Vector3){ 3.0f, 3.0f, 3.0f };
     camera.target = (Vector3){ 0.0f, 0.0f, 0.0f };
     camera.up = (Vector3){ 0.0f, -1.0f, 0.0f };
     camera.fovy = 25.0f;
@@ -1094,12 +1114,6 @@ int main(void)
         p.couleur = couleurAleatoire();
         PolyList[i] = p;
     }
-
-    // Frustum culling
-    Matrix proj    = buildProjectionMatrix(camera);
-    Matrix view    = GetCameraMatrix(camera);
-    Matrix vp      = MatrixMultiply(view, proj);  // ← view PUIS proj
-    Frustum frustum = extractFrustum(vp);
 
 #if ZBUFFER
     float* zbuffer = malloc(SCREEN_WIDTH * SCREEN_HEIGHT * sizeof(float));
@@ -1174,12 +1188,18 @@ int main(void)
         BeginDrawing();
         ClearBackground(BLACK);
 
+        // Frustum culling
+        Matrix proj    = buildProjectionMatrix(camera);
+        Matrix view    = GetCameraMatrix(camera);
+        Matrix vp      = MatrixMultiply(view, proj);  // ← view PUIS proj
+        Frustum frustum = extractFrustum(vp);
+
         for (int i = 0; i < vertexCount; i++) {
             Vector3 v = getVertex(mesh, i);
             v = Vector3Transform(v, rotation);
             projected[i] = GetWorldToScreen(v, camera);
 
-            Matrix view = GetCameraMatrix(camera);
+            //Matrix view = GetCameraMatrix(camera);
             Vector3 viewPos = Vector3Transform(v, view);
 
             z[i] = viewPos.z;
@@ -1271,7 +1291,7 @@ int main(void)
 
 #pragma region Deuxième boucle mesh: BackFace Culling et Frustum Cullin => VisiblePolys
 
-        Matrix view = GetCameraMatrix(camera);
+        //Matrix view = GetCameraMatrix(camera);
         int inc = 0;
 
         for (int i = 0; i < mesh.triangleCount; i++)
@@ -1304,6 +1324,10 @@ int main(void)
 
 #if FRUSTUM_CULLING
             if (!aabbInFrustum(&frustum, aabbMin, aabbMax))
+                continue;
+
+            // Test précis seulement si l'AABB passe
+            if (!triangleInFrustum(&frustum, v0, v1, v2))
                 continue;
 #endif
 
@@ -1371,19 +1395,26 @@ int main(void)
         static int frameCounter   = 0;
 
         frameCounter++;
-        if (frameCounter % 100 == 0)  // mise à jour toutes les 30 frames
+        if (frameCounter % 2 == 0)  // mise à jour toutes les 2 frames
         {
             displayTotal   = mesh.triangleCount;
             displayRendus  = polyCount;
             displayRejetes = mesh.triangleCount - polyCount;
         }
 
-        if (IsKeyDown(KEY_UP))    camera.position.y += 10.0f;
-        if (IsKeyDown(KEY_DOWN))  camera.position.y -= 10.0f;
-        if (IsKeyDown(KEY_RIGHT)) camera.position.x += 10.0f;
-        if (IsKeyDown(KEY_LEFT))  camera.position.x -= 10.0f;
-        if (IsKeyDown(KEY_W))     camera.position.z -= 10.0f;
-        if (IsKeyDown(KEY_S))     camera.position.z += 10.0f;
+        if (IsKeyDown(KEY_UP))    camera.position.y += 1.0f;
+        if (IsKeyDown(KEY_DOWN))  camera.position.y -= 1.0f;
+        if (IsKeyDown(KEY_RIGHT)) camera.position.x += 1.0f;
+        if (IsKeyDown(KEY_LEFT))  camera.position.x -= 1.0f;
+        if (IsKeyDown(KEY_W))     camera.position.z -= 1.0f;
+        if (IsKeyDown(KEY_S))     camera.position.z += 1.0f;
+
+        if (IsKeyDown(KEY_V))     camera.target.y += 1.0f;
+        if (IsKeyDown(KEY_T))     camera.target.y -= 1.0f;
+        if (IsKeyDown(KEY_F))     camera.target.x += 1.0f;
+        if (IsKeyDown(KEY_H))     camera.target.x -= 1.0f;
+        if (IsKeyDown(KEY_P))     camera.target.z += 1.0f;
+        if (IsKeyDown(KEY_L))     camera.target.z -= 1.0f;
 
 #if WARNOCK
         DrawText("Hybride : Warnock + ZBuffer", 10, 10, 20, WHITE);
@@ -1505,6 +1536,11 @@ int main(void)
         DrawText(TextFormat("pos: %.1f %.1f %.1f", 
             camera.position.x, camera.position.y, camera.position.z), 
             10, 150, 20, RED);
+
+        // Afficher la target pour la noter
+        DrawText(TextFormat("Target: %.1f %.1f %.1f", 
+            camera.target.x, camera.target.y, camera.target.z), 
+            10, 180, 20, RED);
 #endif
 
         EndDrawing();
