@@ -3,7 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "warnock.h"
+#include "main.h"
 #include <stdatomic.h>
 #include <pthread.h>
 #include <immintrin.h>
@@ -1079,12 +1079,12 @@ int main(void)
     camera.projection = CAMERA_PERSPECTIVE;
 
     //Model model = LoadModel("./ressources/suzane.obj");
-    //Model model = LoadModel("./ressources/susaneHiDef.obj");
+    Model model = LoadModel("./ressources/susaneHiDef.obj");
     //Model model = LoadModel("./ressources/cube.obj");
     //Model model = LoadModel("./ressources/teapot.obj");
     //Model model = LoadModel("./ressources/teapotUV.obj");
     //Model model = LoadModel("./ressources/tankTri.obj");
-    Model model = LoadModel("./ressources/donut.obj");
+    //Model model = LoadModel("./ressources/donut.obj");
     //Model model = LoadModel("../ressources/donutSimple.obj");
     Mesh mesh = model.meshes[0]; // On prend le premier mesh
 

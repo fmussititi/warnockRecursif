@@ -3,17 +3,17 @@
 	"tasks": [
 		{
 			"type": "cppbuild",
-			"label": "build raylib warnock",
+			"label": "build raylib SoftRender3D",
 			"command": "F:\\Cplusplus\\ucrt64\\bin\\gcc.exe",
 			"args": [
 			"-I", "F:\\C++\\raylib\\include",
-			"F:\\C++\\Projets\\RayLib\\warnockRecursif\\warnock.c",
-			"-o", "warnock.exe","-O2",
+			"F:\\C++\\Projets\\RayLib\\warnockRecursif\\main.c",
+			"-o", "SoftRender3D.exe","-O2",
 			"-L", "F:\\C++\\raylib\\lib",
 			"-lraylib", "-lwinmm", "-lgdi32", "-lopengl32", "-luser32", "-lkernel32", "-mavx2", "-mfma"
 			],
 			"options": {
-				"cwd": "${fileDirname}"
+				"cwd": "${workspaceFolder}"
 			},
 			"problemMatcher": [
 				"$gcc"
