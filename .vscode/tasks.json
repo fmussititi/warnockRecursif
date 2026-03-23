@@ -1,25 +1,33 @@
 {
-	"version": "2.0.0",
-	"tasks": [
-		{
-			"type": "cppbuild",
-			"label": "build raylib SoftRender3D",
-			"command": "F:\\Cplusplus\\ucrt64\\bin\\gcc.exe",
-			"args": [
-			"-I", "F:\\C++\\raylib\\include",
-			"F:\\C++\\Projets\\RayLib\\warnockRecursif\\main.c",
-			"-o", "SoftRender3D.exe","-O2",
-			"-L", "F:\\C++\\raylib\\lib",
-			"-lraylib", "-lwinmm", "-lgdi32", "-lopengl32", "-luser32", "-lkernel32", "-mavx2", "-mfma"
-			],
-			"options": {
-				"cwd": "${workspaceFolder}"
-			},
-			"problemMatcher": [
-				"$gcc"
-			],
-			"group": "build",
-			"detail": "compiler: F:\\Cplusplus\\ucrt64\\bin\\gcc.exe"
-		}
-	]
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "type": "cppbuild",
+            "label": "build raylib SoftRender3D",
+            "command": "F:\\Cplusplus\\ucrt64\\bin\\gcc.exe",
+            "args": [
+                "-I", "F:\\C++\\raylib\\include",
+                "F:\\C++\\Projets\\RayLib\\warnockRecursif\\main.c",
+                "-o", "SoftRender3D.exe",
+                "-O2",
+                "-mavx2",
+                "-mfma",
+                "-static",
+                "-static-libgcc",
+                "-static-libstdc++",
+                "-L", "F:\\C++\\raylib\\lib",
+                "-lraylib", "-lwinmm", "-lgdi32", "-lopengl32", "-luser32", "-lkernel32",
+                "-lpthread"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": ["$gcc"],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "detail": "compiler: F:\\Cplusplus\\ucrt64\\bin\\gcc.exe"
+        }
+    ]
 }
