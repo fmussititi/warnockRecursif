@@ -32,7 +32,10 @@
 // Switch rendu type Tiles
 #define TILES 1
 #define TILE_SIZE 32
-#define DEBUG_TILES 1
+#define MAX_TRI_PER_TILE 20000
+#define MAX_TILES 2000
+#define DEBUG_TILES 0
+#define TEXTURES 1
 
 int tilesX = SCREEN_WIDTH / TILE_SIZE;
 int tilesY = SCREEN_HEIGHT / TILE_SIZE;
@@ -44,9 +47,6 @@ ThreadData threadData[NUM_THREADS];
 pthread_t threads[NUM_THREADS];
 pthread_barrier_t barrierStart;  // main attend que les threads soient prêts
 pthread_barrier_t barrierEnd;    // main attend que les threads aient fini
-
-#define MAX_TRI_PER_TILE 20000
-#define MAX_TILES 2000
 
 typedef struct {
     int count;
@@ -1072,19 +1072,19 @@ int main(void)
     Camera3D camera = { 0 };
     //camera.position = (Vector3){ 200.0f, 200.0f, 200.0f }; // pour tankTri
     //camera.position = (Vector3){ 10.0f, 10.0f, 10.0f }; // pour teapot
-    camera.position = (Vector3){ 3.0f, 3.0f, 3.0f };
+    camera.position = (Vector3){ 5.0f, 5.0f, 5.0f };
     camera.target = (Vector3){ 0.0f, 0.0f, 0.0f };
     camera.up = (Vector3){ 0.0f, -1.0f, 0.0f };
     camera.fovy = 25.0f;
     camera.projection = CAMERA_PERSPECTIVE;
 
     //Model model = LoadModel("suzane.obj");
-    Model model = LoadModel("susaneHiDef.obj");
+    //Model model = LoadModel("susaneHiDef.obj");
     //Model model = LoadModel("cube.obj");
     //Model model = LoadModel("teapot.obj");
     //Model model = LoadModel("teapotUV.obj");
     //Model model = LoadModel("tankTri.obj");
-    //Model model = LoadModel("donut.obj");
+    Model model = LoadModel("donut.obj");
     //Model model = LoadModel("donutSimple.obj");
     Mesh mesh = model.meshes[0]; // On prend le premier mesh
 
@@ -1098,8 +1098,14 @@ int main(void)
     RenderContext ctx;
     ctx.lightDir = Vector3Normalize((Vector3){ 1.0f, 1.0f, -1.0f });
     ctx.cameraPos = camera.position;
+
+#if TEXTURES
     ctx.texImage = LoadImage("rusty_metal_02_diff_1k.jpg");
     ctx.normalMap = LoadImage("rusty_metal_02_nor_gl_1k.jpg");
+#else
+    ctx.texImage.data = NULL;
+    ctx.normalMap.data = NULL;
+#endif
 
     // Tableau de normales par sommet
     Vector3* smoothNormals = calloc(vertexCount, sizeof(Vector3));
@@ -1171,8 +1177,11 @@ int main(void)
     }
 
     free(faceNormals);
-    #pragma endregion
+#pragma endregion
 
+#pragma region Boucle principale de rendu
+    /***********************************************************************************************************/
+    /******************************************* BOUCLE PRINCIPALE DE RENDU ************************************/
     while (!WindowShouldClose())
     {
         //UpdateCamera(&camera, CAMERA_ORBITAL);
@@ -1545,6 +1554,7 @@ int main(void)
 
         EndDrawing();
     }
+#pragma endregion
 
     free(smoothNormals);
     free(projected);
