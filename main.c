@@ -8,7 +8,16 @@
 #include <pthread.h>
 #include <immintrin.h>
 
-#define NUM_THREADS 8
+#define SCREEN_WIDTH 1600
+#define SCREEN_HEIGHT 900
+
+// Switch d'algorithme de rendu
+#define WARNOCK 0
+#define ZBUFFER 0
+#define TILES 1
+
+#pragma region Paramètres généraux et Variables globales
+
                         //suzane.obj
                         //susaneHiDef.obj
                         //cube.obj
@@ -28,27 +37,20 @@
 #define CAMERA_TARGET_Y 0.0     
 #define CAMERA_TARGET_Z 0.0
 
-#define SCREEN_WIDTH 1600
-#define SCREEN_HEIGHT 900
-
 #define BACKFACE_CULLING 0
 #define CAMERA_NEAR 0.01f
 #define CAMERA_FAR  1000.0f
 #define FRUSTUM_CULLING  1
 #define BACKFACE_CULLING_WORD_SPACE 1
 
-// Switch rendu type Warnock
-#define WARNOCK 0
+// Parametres pour Warnock
 #define CONTOUR_ARBRE 1
 #define TREE_DEPTH 10
 #define MAX_POLY 10000
 #define REGION_TILE_SIZE 32
 
-// Switch rendu type ZBuffer
-#define ZBUFFER 0
-
-// Switch rendu type Tiles
-#define TILES 1
+// Parametres pour Tiles
+#define NUM_THREADS 8
 #define TILE_SIZE 32
 #define MAX_TRI_PER_TILE 20000
 #define MAX_TILES 2000
@@ -78,6 +80,8 @@ typedef struct {
 } Tile;
 
 Tile tiles[MAX_TILES];
+
+#pragma endregion
 
 
 #pragma region Fonctions divers
@@ -133,6 +137,14 @@ Vector2 getUV(Mesh mesh, int index) {
         mesh.texcoords[index*2 + 0],
         mesh.texcoords[index*2 + 1]
     };
+}
+
+int compare_zmin(const void *a, const void *b) {
+    Poly *p1 = (Poly*)a;
+    Poly *p2 = (Poly*)b;
+    if (p1->zmin < p2->zmin) return -1;
+    if (p1->zmin > p2->zmin) return  1;
+    return 0;
 }
 #pragma endregion 
 
@@ -875,14 +887,6 @@ void debugDrawTileCoverage(RenderContext* ctx)
     }
 }
 
-int compare_zmin(const void *a, const void *b) {
-    Poly *p1 = (Poly*)a;
-    Poly *p2 = (Poly*)b;
-    if (p1->zmin < p2->zmin) return -1;
-    if (p1->zmin > p2->zmin) return  1;
-    return 0;
-}
-
 // Fonction worker
 void* worker(void* arg) {
     ThreadData* td = (ThreadData*)arg;
@@ -1440,13 +1444,7 @@ int main(void)
         if (IsKeyDown(KEY_L))     camera.target.z -= 1.0f;
 
 #if WARNOCK
-        DrawText("Hybride : Warnock + ZBuffer", 10, 10, 20, WHITE);
-        DrawText(TextFormat("Profondeur de l'arbre = %d | FPS = %d", TREE_DEPTH, GetFPS()),
-         10, 40, 20, WHITE);
-
-        DrawText(TextFormat("Triangles total  : %d", displayTotal), 10, 70, 20, WHITE);
-        DrawText(TextFormat("Triangles rendus : %d", displayRendus),  10, 95, 20, WHITE);
-        DrawText(TextFormat("Triangles rejetés: %d", displayRejetes), 10, 120, 20, WHITE);
+        DrawText(TextFormat("Hybride : Warnock + ZBuffer, Profondeur de l'arbre = %d", TREE_DEPTH), 10, 10, 20, WHITE);
 
         Region root = {0,0,SCREEN_WIDTH,SCREEN_HEIGHT};
         int indices[MAX_POLY];
@@ -1459,12 +1457,6 @@ int main(void)
 
 #if ZBUFFER
         DrawText("ZBuffer", 10, 10, 20, WHITE);
-        DrawText(TextFormat("FPS = %d", GetFPS()),
-         10, 40, 20, WHITE);
-
-        DrawText(TextFormat("Triangles total  : %d", displayTotal), 10, 70, 20, WHITE);
-        DrawText(TextFormat("Triangles rendus : %d", displayRendus),  10, 95, 20, WHITE);
-        DrawText(TextFormat("Triangles rejetés: %d", displayRejetes), 10, 120, 20, WHITE);
 
         for (int i = 0; i < SCREEN_WIDTH * SCREEN_HEIGHT; i++)
             zbuffer[i] = 1e9; // très loin
@@ -1548,6 +1540,8 @@ int main(void)
 #endif
 
         DrawText("Tiles", 10, 10, 20, WHITE);
+#endif
+
         DrawText(TextFormat("FPS = %d", GetFPS()),
          10, 40, 20, WHITE);
 
@@ -1564,7 +1558,6 @@ int main(void)
         DrawText(TextFormat("Target: %.1f %.1f %.1f", 
             camera.target.x, camera.target.y, camera.target.z), 
             10, 180, 20, RED);
-#endif
 
         EndDrawing();
     }
