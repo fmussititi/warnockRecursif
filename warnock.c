@@ -1078,14 +1078,14 @@ int main(void)
     camera.fovy = 25.0f;
     camera.projection = CAMERA_PERSPECTIVE;
 
-    //Model model = LoadModel("suzane.obj");
-    //Model model = LoadModel("susaneHiDef.obj");
-    //Model model = LoadModel("cube.obj");
-    //Model model = LoadModel("teapot.obj");
-    //Model model = LoadModel("teapotUV.obj");
-    //Model model = LoadModel("tankTri.obj");
-    Model model = LoadModel("donut.obj");
-    //Model model = LoadModel("donutSimple.obj");
+    //Model model = LoadModel("./ressources/suzane.obj");
+    //Model model = LoadModel("./ressources/susaneHiDef.obj");
+    //Model model = LoadModel("./ressources/cube.obj");
+    //Model model = LoadModel("./ressources/teapot.obj");
+    //Model model = LoadModel("./ressources/teapotUV.obj");
+    //Model model = LoadModel("./ressources/tankTri.obj");
+    Model model = LoadModel("./ressources/donut.obj");
+    //Model model = LoadModel("../ressources/donutSimple.obj");
     Mesh mesh = model.meshes[0]; // On prend le premier mesh
 
     Vector3 *vertices = (Vector3 *)mesh.vertices;
@@ -1100,8 +1100,8 @@ int main(void)
     ctx.cameraPos = camera.position;
 
 #if TEXTURES
-    ctx.texImage = LoadImage("rusty_metal_02_diff_1k.jpg");
-    ctx.normalMap = LoadImage("rusty_metal_02_nor_gl_1k.jpg");
+    ctx.texImage = LoadImage("./ressources/rusty_metal_02_diff_1k.jpg");
+    ctx.normalMap = LoadImage("./ressources/rusty_metal_02_nor_gl_1k.jpg");
 #else
     ctx.texImage.data = NULL;
     ctx.normalMap.data = NULL;
