@@ -24,7 +24,7 @@
 #define CONTOUR_ARBRE 1
 #define TREE_DEPTH 10
 #define MAX_POLY 10000
-#define REFION_TILE_SIZE 32
+#define REGION_TILE_SIZE 32
 
 // Switch rendu type ZBuffer
 #define ZBUFFER 0
@@ -57,6 +57,11 @@ typedef struct {
 
 Tile tiles[MAX_TILES];
 
+
+#pragma region Fonctions divers
+/***********************************************************************************************************/
+/******************************************* Fonctions Divers **********************************************/
+
 typedef struct {
     float A, B, C;
 } EdgeEq;
@@ -80,7 +85,37 @@ Color couleurAleatoire() {
     return couleurs[GetRandomValue(0, 4)];
 }
 
+Vector3 getNormal(Mesh mesh, int index, Vector3* smoothNormals) {
+    /*if (mesh.normals)  // normales du fichier si disponibles
+        return (Vector3){
+            mesh.normals[index*3 + 0],
+            mesh.normals[index*3 + 1],
+            mesh.normals[index*3 + 2]
+        };
+    else // normales calculées sinon*/
+        return smoothNormals[index];
+}
 
+Vector3 getVertex(Mesh mesh, int index) {
+    return (Vector3){
+        mesh.vertices[index*3 + 0],
+        mesh.vertices[index*3 + 1],
+        mesh.vertices[index*3 + 2]
+    };
+}
+
+// Fonction helper
+Vector2 getUV(Mesh mesh, int index) {
+    if (!mesh.texcoords) return (Vector2){0, 0};
+    return (Vector2){
+        mesh.texcoords[index*2 + 0],
+        mesh.texcoords[index*2 + 1]
+    };
+}
+#pragma endregion 
+
+
+#pragma region Warnock
 /***********************************************************************************************************/
 //******************************** Fonctions pour Warnock rendering ****************************************/
 
@@ -194,7 +229,7 @@ void drawRegionZBuffer(Region* r, Poly* polys, int* indices, int count)
     int width  = r->x2 - r->x1;
     int height = r->y2 - r->y1;
 
-    static float zbuf[REFION_TILE_SIZE * REFION_TILE_SIZE];
+    static float zbuf[REGION_TILE_SIZE * REGION_TILE_SIZE];
 
     for (int i = 0; i < width * height; i++)
         zbuf[i] = 1e9f;
@@ -434,7 +469,10 @@ void warnock(RenderContext* ctx, Region* r, int* indices, int count, int depth) 
     for (int i = 0; i < 4; i++) 
         warnock(ctx, &regions[i], localIndices, localCount, depth + 1);   
 }
+#pragma endregion
 
+
+#pragma region Zbuffer
 /***********************************************************************************************************/
 /*************************************** Fonction pour ZBuffer rendering ***********************************/
 
@@ -490,9 +528,10 @@ void drawTriangleZ(Poly* tri, float* zbuffer)
         }
     }
 }
+#pragma endregion
 
 
-
+#pragma region Tiles
 /***********************************************************************************************************/
 /******************************** Fonctions pour Tiles rendering *******************************************/
 
@@ -883,8 +922,10 @@ void renderFrame(RenderContext* ctx) {
     // Attendre que tous aient fini
     pthread_barrier_wait(&barrierEnd);
 }
+#pragma endregion
 
 
+#pragma region Frustum Culling
 /***********************************************************************************************************/
 //*********************************** Gestion du frustum culling *******************************************/
 
@@ -965,8 +1006,8 @@ Matrix buildProjectionMatrix(Camera3D camera)
 {
     float aspect = (float)SCREEN_WIDTH / (float)SCREEN_HEIGHT;
     float fovy   = camera.fovy * DEG2RAD;
-    float near   = 0.01f;
-    float far    = 1000.0f;
+    float near   = CAMERA_NEAR;
+    float far    = CAMERA_FAR;
 
     return MatrixPerspective(fovy, aspect, near, far);
 }
@@ -983,39 +1024,12 @@ bool isBackFace(Vector3 v0, Vector3 v1, Vector3 v2, Vector3 cameraPos)
     // Si la normale pointe dans la direction opposée à la caméra → face arrière
     return Vector3DotProduct(normal, toCamera) >= 0;
 }
+#pragma endregion
 
+
+#pragma region Main
 /***********************************************************************************************************/
-
-Vector3 getNormal(Mesh mesh, int index, Vector3* smoothNormals) {
-    /*if (mesh.normals)  // normales du fichier si disponibles
-        return (Vector3){
-            mesh.normals[index*3 + 0],
-            mesh.normals[index*3 + 1],
-            mesh.normals[index*3 + 2]
-        };
-    else // normales calculées sinon*/
-        return smoothNormals[index];
-}
-
-Vector3 getVertex(Mesh mesh, int index) {
-    return (Vector3){
-        mesh.vertices[index*3 + 0],
-        mesh.vertices[index*3 + 1],
-        mesh.vertices[index*3 + 2]
-    };
-}
-
-// Fonction helper
-Vector2 getUV(Mesh mesh, int index) {
-    if (!mesh.texcoords) return (Vector2){0, 0};
-    return (Vector2){
-        mesh.texcoords[index*2 + 0],
-        mesh.texcoords[index*2 + 1]
-    };
-}
-
-
-/***********************************************************************************************************/
+/********************************************* Main ********************************************************/
 
 int main(void)
 {
@@ -1031,20 +1045,24 @@ int main(void)
     InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "Tiles rendering");
 #endif
 
+#pragma region Initialisations
+/***********************************************************************************************************/
+/******************************************* INIT **********************************************************/
+
     Camera3D camera = { 0 };
     //camera.position = (Vector3){ 200.0f, 200.0f, 200.0f }; // pour tankTri
-    camera.position = (Vector3){ 10.0f, 10.0f, 10.0f }; // pour teapot
-    //camera.position = (Vector3){ 5.0f, 5.0f, 5.0f };
+    //camera.position = (Vector3){ 10.0f, 10.0f, 10.0f }; // pour teapot
+    camera.position = (Vector3){ 5.0f, 5.0f, 5.0f };
     camera.target = (Vector3){ 0.0f, 0.0f, 0.0f };
     camera.up = (Vector3){ 0.0f, -1.0f, 0.0f };
     camera.fovy = 25.0f;
     camera.projection = CAMERA_PERSPECTIVE;
 
     //Model model = LoadModel("suzane.obj");
-    //Model model = LoadModel("susaneHiDef.obj");
+    Model model = LoadModel("susaneHiDef.obj");
     //Model model = LoadModel("cube.obj");
     //Model model = LoadModel("teapot.obj");
-    Model model = LoadModel("teapotUV.obj");
+    //Model model = LoadModel("teapotUV.obj");
     //Model model = LoadModel("tankTri.obj");
     //Model model = LoadModel("donut.obj");
     //Model model = LoadModel("donutSimple.obj");
@@ -1139,6 +1157,7 @@ int main(void)
     }
 
     free(faceNormals);
+    #pragma endregion
 
     while (!WindowShouldClose())
     {
@@ -1148,10 +1167,6 @@ int main(void)
         rotX += 0.01f;
         rotY -= 0.015f;
         rotZ += 0.015f;
-
-        //rotX = fmodf(rotX + 0.01f, 2.0f * PI);
-        //rotY = fmodf(rotY + 0.005f, 2.0f * PI);
-        //rotZ = fmodf(rotZ + 0.015f, 2.0f * PI);
 
         Matrix rotation = MatrixRotateXYZ((Vector3){ rotX, rotY, rotZ });
         //Matrix rotation = MatrixRotateXYZ((Vector3){ 0, rotY, 0 });
@@ -1171,6 +1186,8 @@ int main(void)
             //z[i] = v.z;
         }
         
+#pragma region Première boucle mesh: Initialisation des Polys de la PolyList 
+
         for (int i = 0; i < mesh.vertexCount / 3; i++) {
             int i0 = i * 3;
             int i1 = i * 3 + 1;
@@ -1250,6 +1267,9 @@ int main(void)
                 });
             }
         }
+#pragma endregion
+
+#pragma region Deuxième boucle mesh: BackFace Culling et Frustum Cullin => VisiblePolys
 
         Matrix view = GetCameraMatrix(camera);
         int inc = 0;
@@ -1341,6 +1361,9 @@ int main(void)
 #endif
         }
         int polyCount = inc;
+        ctx.polys = visiblePolys;
+        ctx.polyCount = polyCount;
+#pragma endregion
 
         static int displayTotal   = 0;
         static int displayRendus  = 0;
@@ -1375,9 +1398,7 @@ int main(void)
         int indices[MAX_POLY];
         for (int i = 0; i < polyCount; i++)
             indices[i] = i;
-        //RenderContext ctx;
-        ctx.polys = visiblePolys;
-        ctx.polyCount=polyCount;
+
         ctx.rootIndices = indices;
         warnock(&ctx, &root, indices, polyCount, 0);
 #endif
@@ -1396,14 +1417,12 @@ int main(void)
 
         for (int i = 0; i < polyCount; i++)
         {
-            drawTriangleZ(&visiblePolys[i], zbuffer);
+            //drawTriangleZ(&visiblePolys[i], zbuffer);
+            drawTriangleZ(&ctx.polys[i], zbuffer);
         }
 #endif
 
 #if TILES
-        ctx.polys = visiblePolys;
-        ctx.polyCount = polyCount;
-
         qsort(ctx.polys, ctx.polyCount, sizeof(Poly), compare_zmin);
 
         for (int i = 0; i < tilesX * tilesY; i++){
@@ -1497,13 +1516,15 @@ int main(void)
     free(PolyList);
     free(visiblePolys);
 
+#if ZBUFFER
+    free(zbuffer);
+#endif
+
     UnloadModel(model);
     if (ctx.texImage.data)  UnloadImage(ctx.texImage);
     if (ctx.normalMap.data) UnloadImage(ctx.normalMap);
 
     CloseWindow();
-#if ZBUFFER
-    free(zbuffer);
-#endif
     return 0;
 }
+#pragma endregion
