@@ -9,6 +9,24 @@
 #include <immintrin.h>
 
 #define NUM_THREADS 8
+                        //suzane.obj
+                        //susaneHiDef.obj
+                        //cube.obj
+                        //teapot.obj
+                        //teapotUV.obj
+                        //tankTri.obj
+                        //donut.obj
+                        //donutSimple.obj
+#define MODEL_NAME_FILE "susaneHiDef.obj"
+#define MODEL_PATH "./ressources/" MODEL_NAME_FILE
+
+#define CAMERA_POSITION_X 5.0     //camera.position = (Vector3){ 200.0f, 200.0f, 200.0f }; // pour tankTri
+#define CAMERA_POSITION_Y 5.0     //camera.position = (Vector3){ 10.0f, 10.0f, 10.0f }; // pour teapot
+#define CAMERA_POSITION_Z 5.0
+
+#define CAMERA_TARGET_X 0.0     
+#define CAMERA_TARGET_Y 0.0     
+#define CAMERA_TARGET_Z 0.0
 
 #define SCREEN_WIDTH 1600
 #define SCREEN_HEIGHT 900
@@ -36,6 +54,10 @@
 #define MAX_TILES 2000
 #define DEBUG_TILES 0
 #define TEXTURES 1
+#define TEXTURE_DIFF_NAME_FILE "rusty_metal_02_diff_1k.jpg"
+#define TEXTURE_DIFF_PATH "./ressources/" TEXTURE_DIFF_NAME_FILE
+#define TEXTURE_NORMAL_NAME_FILE "rusty_metal_02_nor_gl_1k.jpg"
+#define TEXTURE_NORMAL_PATH "./ressources/" TEXTURE_NORMAL_NAME_FILE
 
 int tilesX = SCREEN_WIDTH / TILE_SIZE;
 int tilesY = SCREEN_HEIGHT / TILE_SIZE;
@@ -1070,22 +1092,14 @@ int main(void)
 /******************************************* INIT **********************************************************/
 
     Camera3D camera = { 0 };
-    //camera.position = (Vector3){ 200.0f, 200.0f, 200.0f }; // pour tankTri
-    //camera.position = (Vector3){ 10.0f, 10.0f, 10.0f }; // pour teapot
-    camera.position = (Vector3){ 5.0f, 5.0f, 5.0f };
-    camera.target = (Vector3){ 0.0f, 0.0f, 0.0f };
+    camera.position = (Vector3){ CAMERA_POSITION_X, CAMERA_POSITION_Y, CAMERA_POSITION_Z };
+    camera.target = (Vector3){ CAMERA_TARGET_X, CAMERA_TARGET_Y, CAMERA_TARGET_Z };
     camera.up = (Vector3){ 0.0f, -1.0f, 0.0f };
     camera.fovy = 25.0f;
     camera.projection = CAMERA_PERSPECTIVE;
 
-    //Model model = LoadModel("./ressources/suzane.obj");
-    Model model = LoadModel("./ressources/susaneHiDef.obj");
-    //Model model = LoadModel("./ressources/cube.obj");
-    //Model model = LoadModel("./ressources/teapot.obj");
-    //Model model = LoadModel("./ressources/teapotUV.obj");
-    //Model model = LoadModel("./ressources/tankTri.obj");
-    //Model model = LoadModel("./ressources/donut.obj");
-    //Model model = LoadModel("../ressources/donutSimple.obj");
+    Model model = LoadModel(MODEL_PATH);
+
     Mesh mesh = model.meshes[0]; // On prend le premier mesh
 
     Vector3 *vertices = (Vector3 *)mesh.vertices;
@@ -1100,8 +1114,8 @@ int main(void)
     ctx.cameraPos = camera.position;
 
 #if TEXTURES
-    ctx.texImage = LoadImage("./ressources/rusty_metal_02_diff_1k.jpg");
-    ctx.normalMap = LoadImage("./ressources/rusty_metal_02_nor_gl_1k.jpg");
+    ctx.texImage = LoadImage(TEXTURE_DIFF_PATH);
+    ctx.normalMap = LoadImage(TEXTURE_NORMAL_PATH);
 #else
     ctx.texImage.data = NULL;
     ctx.normalMap.data = NULL;
