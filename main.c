@@ -1374,41 +1374,39 @@ int main(void)
 
             if (intensity < 0) intensity = 0;
 #if BACKFACE_CULLING
-            if (normal.z < 0)
-            {
+            if (normal.z > 0)
+                continue;
 #endif
-                Poly p = PolyList[i];
+            Poly p = PolyList[i];
 
-                // couleur de base (blanc ou autre)
-                //Color base = WHITE;
-                Color base = PolyList[i].couleur;
-                //Color base = {200, 100, 50, 255}; // cuivre / terre cuite
-                p.couleur = base;
+            // couleur de base (blanc ou autre)
+            //Color base = WHITE;
+            Color base = PolyList[i].couleur;
+            //Color base = {200, 100, 50, 255}; // cuivre / terre cuite
+            p.couleur = base;
 
-                if (!cfg.tiles)
-                    p.couleur = (Color){
-                        (unsigned char)(base.r * intensity),
-                        (unsigned char)(base.g * intensity),
-                        (unsigned char)(base.b * intensity),
-                        255
-                    };
+            if (!cfg.tiles)
+                p.couleur = (Color){
+                    (unsigned char)(base.r * intensity),
+                    (unsigned char)(base.g * intensity),
+                    (unsigned char)(base.b * intensity),
+                    255
+                };
 
-                // Transformer les normales comme les vertices
-                p.n0 = Vector3Normalize(Vector3Transform(getNormal(mesh, i0, smoothNormals), rotation));
-                p.n1 = Vector3Normalize(Vector3Transform(getNormal(mesh, i1, smoothNormals), rotation));
-                p.n2 = Vector3Normalize(Vector3Transform(getNormal(mesh, i2, smoothNormals), rotation));
+            // Transformer les normales comme les vertices
+            p.n0 = Vector3Normalize(Vector3Transform(getNormal(mesh, i0, smoothNormals), rotation));
+            p.n1 = Vector3Normalize(Vector3Transform(getNormal(mesh, i1, smoothNormals), rotation));
+            p.n2 = Vector3Normalize(Vector3Transform(getNormal(mesh, i2, smoothNormals), rotation));
 
-                p.v0 = Vector3Transform(getVertex(mesh, i0), rotation);
-                p.v1 = Vector3Transform(getVertex(mesh, i1), rotation);
-                p.v2 = Vector3Transform(getVertex(mesh, i2), rotation);
+            p.v0 = Vector3Transform(getVertex(mesh, i0), rotation);
+            p.v1 = Vector3Transform(getVertex(mesh, i1), rotation);
+            p.v2 = Vector3Transform(getVertex(mesh, i2), rotation);
 
-                p.tangent   = Vector3Normalize(Vector3Transform(p.tangent,   rotation));
-                p.bitangent = Vector3Normalize(Vector3Transform(p.bitangent, rotation));
+            p.tangent   = Vector3Normalize(Vector3Transform(p.tangent,   rotation));
+            p.bitangent = Vector3Normalize(Vector3Transform(p.bitangent, rotation));
 
-                visiblePolys[inc++] = p;
-#if BACKFACE_CULLING
-            }
-#endif
+            visiblePolys[inc++] = p;
+
         }
         int polyCount = inc;
         ctx.polys = visiblePolys;
@@ -1443,7 +1441,7 @@ int main(void)
         if (IsKeyDown(KEY_L))     camera.target.z -= 1.0f;
 
         if (cfg.warnock){
-            DrawText(TextFormat("Hybride : Warnock + ZBuffer, Profondeur de l'arbre = %d", cfg.tree_depth), 10, 10, 20, RED);
+            DrawText(TextFormat("Hybride : Warnock + ZBuffer, Profondeur de l'arbre = %d", cfg.tree_depth), 10, 10, 20, WHITE);
 
             Region root = {0,0,cfg.screen_width,cfg.screen_height};
             int indices[cfg.max_poly];
@@ -1455,7 +1453,7 @@ int main(void)
         }
 
         if (cfg.zbuffer){
-            DrawText("ZBuffer", 10, 10, 20, RED);
+            DrawText("ZBuffer", 10, 10, 20, WHITE);
 
             for (int i = 0; i < cfg.screen_width * cfg.screen_height; i++)
                 zbuffer[i] = 1e9; // très loin
@@ -1538,25 +1536,25 @@ int main(void)
                 //debugDrawTileCoverage(&ctx);
             }
 
-        DrawText("Tiles", 10, 10, 20, RED);
+        DrawText("Tiles", 10, 10, 20, WHITE);
         }
 
         DrawText(TextFormat("FPS = %d", GetFPS()),
-         10, 40, 20, RED);
+         10, 40, 20, WHITE);
 
-        DrawText(TextFormat("Triangles total  : %d", displayTotal), 10, 70, 20, RED);
-        DrawText(TextFormat("Triangles rendus : %d", displayRendus),  10, 95, 20, RED);
-        DrawText(TextFormat("Triangles rejetés: %d", displayRejetes), 10, 120, 20, RED);
+        DrawText(TextFormat("Triangles total  : %d", displayTotal), 10, 70, 20, WHITE);
+        DrawText(TextFormat("Triangles rendus : %d", displayRendus),  10, 95, 20, WHITE);
+        DrawText(TextFormat("Triangles rejetés: %d", displayRejetes), 10, 120, 20, WHITE);
 
         // Afficher la position pour la noter
         DrawText(TextFormat("pos: %.1f %.1f %.1f", 
             camera.position.x, camera.position.y, camera.position.z), 
-            10, 150, 20, RED);
+            10, 150, 20, WHITE);
 
         // Afficher la target pour la noter
         DrawText(TextFormat("Target: %.1f %.1f %.1f", 
             camera.target.x, camera.target.y, camera.target.z), 
-            10, 180, 20, RED);
+            10, 180, 20, WHITE);
 
         EndDrawing();
     }
