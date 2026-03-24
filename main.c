@@ -472,9 +472,9 @@ void drawTriangleZ(RenderContext* ctx, Poly* tri, float* zbuffer)
 {
     // bounding box écran
     int minX = fmaxf(0, floorf(fminf(tri->p0.x, fminf(tri->p1.x, tri->p2.x))));
-    int maxX = fminf(1599, ceilf(fmaxf(tri->p0.x, fmaxf(tri->p1.x, tri->p2.x))));
+    int maxX = fminf(ctx->screenWidth-1, ceilf(fmaxf(tri->p0.x, fmaxf(tri->p1.x, tri->p2.x))));
     int minY = fmaxf(0, floorf(fminf(tri->p0.y, fminf(tri->p1.y, tri->p2.y))));
-    int maxY = fminf(899, ceilf(fmaxf(tri->p0.y, fmaxf(tri->p1.y, tri->p2.y))));
+    int maxY = fminf(ctx->screenWidth-1, ceilf(fmaxf(tri->p0.y, fmaxf(tri->p1.y, tri->p2.y))));
 
     for (int y = minY; y <= maxY; y++)
     {
@@ -508,7 +508,7 @@ void drawTriangleZ(RenderContext* ctx, Poly* tri, float* zbuffer)
 
                 float z = w0*tri->z0 + w1*tri->z1 + w2*tri->z2;
 
-                int index = y * 1600 + x;
+                int index = y * ctx->screenWidth + x;
 
                 if (z < zbuffer[index])
                 {
@@ -591,6 +591,7 @@ void drawTile(RenderContext* ctx, int tx, int ty)
     Tile* tile = &tiles[ty * tilesX + tx];
 
     float zbuf[ctx->tile_size * ctx->tile_size];
+    //float* zbuf = malloc(ctx->tile_size * ctx->tile_size * sizeof(float));
     for (int i = 0; i < ctx->tile_size * ctx->tile_size; i++)
         zbuf[i] = 1e9f;
 
@@ -793,6 +794,7 @@ void drawTile(RenderContext* ctx, int tx, int ty)
             w2_row += e2.B;
         }
     }
+    //free(zbuf);
 }
 
 static Color colorFromIndex(int i)
@@ -1271,10 +1273,10 @@ int main(void)
             }
             p->visible = true;
 
-            p->tileMinX = (int)(p->minX) >> 5; // equivalent à (int)(p->minX) / TILE_SIZE avec TILE_SIZE ==> (32= 2^5);
-            p->tileMaxX = (int)(p->maxX) >> 5;
-            p->tileMinY = (int)(p->minY) >> 5;
-            p->tileMaxY = (int)(p->maxY) >> 5;
+            p->tileMinX = (int)(p->minX) / ctx.tile_size;
+            p->tileMaxX = (int)(p->maxX) / ctx.tile_size;
+            p->tileMinY = (int)(p->minY) / ctx.tile_size;
+            p->tileMaxY = (int)(p->maxY) / ctx.tile_size;
 
             p->uv0 = getUV(mesh, i0);
             p->uv1 = getUV(mesh, i1);
