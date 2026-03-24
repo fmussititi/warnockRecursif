@@ -37,6 +37,8 @@ typedef struct {
     float diffuse;
     float specular;
     float shininess;
+    float refl1;
+    float refl2;
 
     Vector3 cameraPos;
     Vector3 cameraForward;

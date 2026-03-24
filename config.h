@@ -28,6 +28,7 @@ typedef struct {
     // Lumiere
     float light_x, light_y, light_z;
     float ambient, diffuse, specular, shininess;
+    float refl1, refl2;
 
     // Textures
     int textures_enabled;
@@ -70,6 +71,7 @@ Config loadConfig(const char* filename)
         .light_x        = 1.0f, .light_y = 1.0f, .light_z = -1.0f,
         .ambient  = 0.2f, .diffuse = 0.6f,
         .specular = 1.5f, .shininess = 64.0f,
+        .refl1 = 0.15f,   .refl2 = 0.1f,
         .textures_enabled = 1,
         .tex_diffuse    = "./ressources/rusty_metal_02_diff_1k.jpg",
         .tex_normal     = "./ressources/rusty_metal_02_nor_gl_1k.jpg",
@@ -132,6 +134,8 @@ Config loadConfig(const char* filename)
         else if (!strcmp(k, "diffuse_light"))     cfg.diffuse           = atof(v);
         else if (!strcmp(k, "specular_light"))    cfg.specular          = atof(v);
         else if (!strcmp(k, "shininess_light"))   cfg.shininess         = atof(v);
+        else if (!strcmp(k, "refl1"))             cfg.refl1             = atof(v);
+        else if (!strcmp(k, "refl2"))             cfg.refl2             = atof(v);
         else if (!strcmp(k, "enabled"))           cfg.textures_enabled  = atoi(v);
         else if (!strcmp(k, "diffuse_tex"))       strncpy(cfg.tex_diffuse, v, 255);
         else if (!strcmp(k, "normal_tex"))        strncpy(cfg.tex_normal,  v, 255);

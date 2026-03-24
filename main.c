@@ -885,7 +885,7 @@ void drawTile(RenderContext* ctx, int tx, int ty)
                             Color final;
                             if (ctx->envMap.data != NULL) {
                                 //float reflectivity = 0.8f + 0.2f * fresnel;
-                                float reflectivity = 0.15f + 0.1f * fresnel;
+                                float reflectivity = ctx->refl1 + ctx->refl2 * fresnel;
                                 final = (Color){
                                     (unsigned char)(litBase.r * (1.0f - reflectivity) + envColor.r * reflectivity),
                                     (unsigned char)(litBase.g * (1.0f - reflectivity) + envColor.g * reflectivity),
@@ -1300,6 +1300,8 @@ int main(void)
     ctx.num_threads = cfg.num_threads;
     ctx.tile_size = cfg.tile_size;
     ctx.envMap_enable = cfg.envMap_enable;
+    ctx.refl1 = cfg.refl1;
+    ctx.refl2 = cfg.refl2;
 
     if (cfg.envMap_enable) {
         ctx.envMap = LoadImage(cfg.envMap);
