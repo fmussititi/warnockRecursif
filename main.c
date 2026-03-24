@@ -740,6 +740,56 @@ void drawTile(RenderContext* ctx, int tx, int ty)
                                 base = GetImageColor(ctx->texImage, texX, texY);
                             }
 
+#pragma region Lighting
+                            // vecteur vue (TOUJOURS défini)
+                            Vector3 viewDir = Vector3Normalize(Vector3Subtract(ctx->cameraPos, pixelPos));
+
+                            // =======================
+                            // ENVIRONMENT MAPPING (stylé chrome)
+                            // =======================                            
+                            Color envColor = base;
+
+                            if (ctx->envMap.data != NULL)
+                            {
+                                // réflexion
+                                Vector3 I = Vector3Negate(viewDir);
+                                Vector3 R = Vector3Subtract(I, Vector3Scale(n, 2.0f * Vector3DotProduct(I, n)));
+                                R = Vector3Normalize(R);
+
+                                // mapping sphérique
+                                float u_env = 0.5f + atan2f(R.z, R.x) / (2.0f * PI);
+                                float v_env = 0.5f - asinf(R.y) / PI;
+
+                                int envX = (int)(u_env * ctx->envMap.width)  % ctx->envMap.width;
+                                int envY = (int)(v_env * ctx->envMap.height) % ctx->envMap.height;
+
+                                if (envX < 0) envX += ctx->envMap.width;
+                                if (envY < 0) envY += ctx->envMap.height;
+
+                                envColor = GetImageColor(ctx->envMap, envX, envY);
+
+                                // effet stylé : boost couleurs + contraste
+                                envColor.r = (unsigned char)fminf(envColor.r * 1.3f + 20, 255);
+                                envColor.g = (unsigned char)fminf(envColor.g * 1.3f + 20, 255);
+                                envColor.b = (unsigned char)fminf(envColor.b * 1.3f + 20, 255);
+                            }
+
+                            // =======================
+                            //  MIX CHROME / COLOR
+                            // =======================
+                            float fresnel = powf(1.0f - fmaxf(Vector3DotProduct(n, viewDir), 0.0f), 5.0f);
+
+                            // effet miroir fort + bord brillant
+                            //float reflectivity = 0.4f + 0.6f * fresnel;
+                            float reflectivity = 0.8f + 0.2f * fresnel;
+
+                            Color finalBase = {
+                                (unsigned char)(base.r * (1.0f - reflectivity) + envColor.r * reflectivity),
+                                (unsigned char)(base.g * (1.0f - reflectivity) + envColor.g * reflectivity),
+                                (unsigned char)(base.b * (1.0f - reflectivity) + envColor.b * reflectivity),
+                                255
+                            };
+
                             // Lighting
                             float dotNL = Vector3DotProduct(n, ctx->lightDir);
 
@@ -747,16 +797,16 @@ void drawTile(RenderContext* ctx, int tx, int ty)
                                 int fbY = ctx->screenHeight - y;
                                 if (fbY >= 0 && fbY < ctx->screenHeight)
                                     framebuffer[fbY * ctx->screenWidth + px] = (Color){
-                                        (unsigned char)(base.r * ctx->ambient),
-                                        (unsigned char)(base.g * ctx->ambient),
-                                        (unsigned char)(base.b * ctx->ambient),
+                                        (unsigned char)(finalBase.r * ctx->ambient),
+                                        (unsigned char)(finalBase.g * ctx->ambient),
+                                        (unsigned char)(finalBase.b * ctx->ambient),
                                         255
                                     };
                                 continue;
                             }
 
                             float diffuse = dotNL;
-                            Vector3 viewDir = Vector3Normalize(Vector3Subtract(ctx->cameraPos, pixelPos));
+                            //Vector3 viewDir = Vector3Normalize(Vector3Subtract(ctx->cameraPos, pixelPos));
                             Vector3 halfDir = Vector3Normalize(Vector3Add(ctx->lightDir, viewDir));
                             float dotNH = fmaxf(Vector3DotProduct(n, halfDir), 0.0f);
                             float spec = powf(dotNH, ctx->shininess);
@@ -764,14 +814,15 @@ void drawTile(RenderContext* ctx, int tx, int ty)
                             float ambient = ctx->ambient;
                             float intensity = fminf(ambient + diffuse * ctx->diffuse + spec * ctx->specular, 1.0f);
 
-                            int r = (int)(base.r * intensity);
-                            int g = (int)(base.g * intensity);
-                            int b = (int)(base.b * intensity);
+                            int r = (int)(finalBase.r * intensity);
+                            int g = (int)(finalBase.g * intensity);
+                            int b = (int)(finalBase.b * intensity);
 
                             float specIntensity = spec * ctx->specular;
                             r = (int)fminf(r + 255 * specIntensity, 255);
                             g = (int)fminf(g + 255 * specIntensity, 255);
                             b = (int)fminf(b + 255 * specIntensity, 255);
+#pragma endregion
 
                             int fbY = ctx->screenHeight - y;
                             if (fbY >= 0 && fbY < ctx->screenHeight)
@@ -1120,6 +1171,9 @@ int main(void)
     ctx.fov = cfg.fov;
     ctx.num_threads = cfg.num_threads;
     ctx.tile_size = cfg.tile_size;
+
+    if (cfg.envMap_enable)
+        ctx.envMap = LoadImage(cfg.envMap);
 
     if (cfg.textures_enabled) {
         ctx.texImage  = LoadImage(cfg.tex_diffuse);
@@ -1585,6 +1639,7 @@ int main(void)
     UnloadModel(model);
     if (ctx.texImage.data)  UnloadImage(ctx.texImage);
     if (ctx.normalMap.data) UnloadImage(ctx.normalMap);
+    if (ctx.envMap.data) UnloadImage(ctx.envMap);
 
     CloseWindow();
     return 0;

@@ -34,6 +34,10 @@ typedef struct {
     char tex_diffuse[256];
     char tex_normal[256];
 
+    // EnvironementMap
+    int envMap_enable;
+    char envMap[256];
+
     // Tiles
     int num_threads;
     int tile_size;
@@ -69,6 +73,8 @@ Config loadConfig(const char* filename)
         .textures_enabled = 1,
         .tex_diffuse    = "./ressources/rusty_metal_02_diff_1k.jpg",
         .tex_normal     = "./ressources/rusty_metal_02_nor_gl_1k.jpg",
+        .envMap_enable  = 1,
+        .envMap         = "./ressources/bell_tower.jpg",
         .num_threads    = 8,
         .tile_size      = 32,
         .max_tri_per_tile = 20000,
@@ -129,6 +135,8 @@ Config loadConfig(const char* filename)
         else if (!strcmp(k, "enabled"))           cfg.textures_enabled  = atoi(v);
         else if (!strcmp(k, "diffuse_tex"))       strncpy(cfg.tex_diffuse, v, 255);
         else if (!strcmp(k, "normal_tex"))        strncpy(cfg.tex_normal,  v, 255);
+        else if (!strcmp(k, "enableEnvMap"))      cfg.envMap_enable     = atoi(v);
+        else if (!strcmp(k, "envMap"))            strncpy(cfg.envMap,      v, 255);
         else if (!strcmp(k, "num_threads"))       cfg.num_threads       = atoi(v);
         else if (!strcmp(k, "tile_size"))         cfg.tile_size         = atoi(v);
         else if (!strcmp(k, "max_tri_per_tile"))  cfg.max_tri_per_tile  = atoi(v);

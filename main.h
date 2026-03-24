@@ -45,6 +45,7 @@ typedef struct {
 
     Image texImage;
     Image normalMap;    // normal map
+    Image envMap;
     int num_threads;
     int tile_size;
 
