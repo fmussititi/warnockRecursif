@@ -866,17 +866,6 @@ void drawTile(RenderContext* ctx, int tx, int ty)
                             // =======================
                             float fresnel = powf(1.0f - fmaxf(Vector3DotProduct(n, viewDir), 0.0f), 5.0f);
 
-                            // effet miroir fort + bord brillant
-                            float reflectivity = 0.4f + 0.6f * fresnel;
-                            //float reflectivity = 0.8f + 0.2f * fresnel;
-
-                            Color finalBase = {
-                                (unsigned char)(base.r * (1.0f - reflectivity) + envColor.r * reflectivity),
-                                (unsigned char)(base.g * (1.0f - reflectivity) + envColor.g * reflectivity),
-                                (unsigned char)(base.b * (1.0f - reflectivity) + envColor.b * reflectivity),
-                                255
-                            };
-
                             float dotNL = fmaxf(Vector3DotProduct(n, ctx->lightDir), 0.0f); // ← clamp ici
 
                             float diffuse = dotNL;
@@ -895,7 +884,8 @@ void drawTile(RenderContext* ctx, int tx, int ty)
 
                             Color final;
                             if (ctx->envMap.data != NULL) {
-                                float reflectivity = 0.8f + 0.2f * fresnel;
+                                //float reflectivity = 0.8f + 0.2f * fresnel;
+                                float reflectivity = 0.15f + 0.1f * fresnel;
                                 final = (Color){
                                     (unsigned char)(litBase.r * (1.0f - reflectivity) + envColor.r * reflectivity),
                                     (unsigned char)(litBase.g * (1.0f - reflectivity) + envColor.g * reflectivity),
