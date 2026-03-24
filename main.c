@@ -1344,19 +1344,6 @@ int main(void)
         tex = LoadTextureFromImage(img);
         UnloadImage(img);
 
-        if (cfg.envMap){
-            
-            Vector3 forward = Vector3Normalize(Vector3Subtract(camera.target, camera.position));
-            Vector3 right   = Vector3Normalize(Vector3CrossProduct(forward, camera.up));
-            Vector3 up      = Vector3CrossProduct(right, forward);
-
-            ctx.cameraForward = forward;
-            ctx.cameraRight   = right;
-            ctx.cameraUp      = up; 
-
-            PrecomputeSkyboxLUT(&ctx);
-        }
-
         // Init
         pthread_barrier_init(&barrierStart,        NULL, cfg.num_threads + 1);
         pthread_barrier_init(&barrierEnd,          NULL, cfg.num_threads + 1);
@@ -1421,6 +1408,26 @@ int main(void)
 
         Matrix rotation = MatrixRotateXYZ((Vector3){ rotX, rotY, rotZ });
         //Matrix rotation = MatrixRotateXYZ((Vector3){ 0, rotY, 0 });
+
+        if (cfg.envMap){
+            
+            Vector3 forward = Vector3Normalize(Vector3Subtract(camera.target, camera.position));
+            Vector3 right   = Vector3Normalize(Vector3CrossProduct(forward, camera.up));
+            Vector3 up      = Vector3CrossProduct(right, forward);
+
+            ctx.cameraForward = forward;
+            ctx.cameraRight   = right;
+            ctx.cameraUp      = up; 
+
+            static Vector3 lastForward = {0};
+            if (fabsf(forward.x - lastForward.x) > 0.0001f ||
+                fabsf(forward.y - lastForward.y) > 0.0001f ||
+                fabsf(forward.z - lastForward.z) > 0.0001f)
+            {
+                PrecomputeSkyboxLUT(&ctx);
+                lastForward = forward;
+            }
+        }
 
         BeginDrawing();
         ClearBackground(BLACK);
