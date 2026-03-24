@@ -1065,13 +1065,20 @@ int main(void)
     }
 
     if (cfg.warnock)
-        InitWindow(cfg.screen_width, cfg.screen_height, "Hybride : Warnock + ZBuffer rendering");
+        InitWindow(cfg.screen_width, cfg.screen_height, 
+            TextFormat("Hybride : Warnock + ZBuffer rendering %dx%d", 
+                cfg.screen_width, cfg.screen_height));
+
 
     if (cfg.zbuffer)
-        InitWindow(cfg.screen_width, cfg.screen_height, "ZBuffer rendering");
+        InitWindow(cfg.screen_width, cfg.screen_height, 
+            TextFormat("ZBuffer rendering %dx%d", 
+                cfg.screen_width, cfg.screen_height));
 
     if (cfg.tiles)
-        InitWindow(cfg.screen_width, cfg.screen_height, "Tiles rendering");
+        InitWindow(cfg.screen_width, cfg.screen_height, 
+            TextFormat("SoftRender3D - Tiles %dx%d - %d threads", 
+                cfg.screen_width, cfg.screen_height, cfg.num_threads));
 
 
 #pragma region Initialisations
