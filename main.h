@@ -39,6 +39,12 @@ typedef struct {
     float shininess;
 
     Vector3 cameraPos;
+    Vector3 cameraForward;
+    Vector3 cameraRight;
+    Vector3 cameraUp;
+    float* skyU;
+    float* skyV;
+
     float far;
     float near;
     float fov;
@@ -46,6 +52,7 @@ typedef struct {
     Image texImage;
     Image normalMap;    // normal map
     Image envMap;
+    int envMap_enable;
     int num_threads;
     int tile_size;
 
@@ -62,6 +69,8 @@ typedef struct {
     RenderContext* ctx;
     int startTile;
     int endTile;
+    int startLine;
+    int endLine;
     bool frameReady;
     pthread_mutex_t mutex;
     pthread_cond_t cond;

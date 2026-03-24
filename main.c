@@ -27,6 +27,7 @@ ThreadData* threadData;
 pthread_t* threads;
 pthread_barrier_t barrierStart;  // main attend que les threads soient prêts
 pthread_barrier_t barrierEnd;    // main attend que les threads aient fini
+pthread_barrier_t barrierSkyboxDone;
 
 typedef struct {
     int count;
@@ -101,6 +102,90 @@ int compare_zmin(const void *a, const void *b) {
     if (p1->zmin < p2->zmin) return -1;
     if (p1->zmin > p2->zmin) return  1;
     return 0;
+}
+
+Color SampleEquirectangular(RenderContext *ctx, Vector3 dir)
+{
+    if (!ctx->envMap.data) return (Color){255,0,255,255};
+
+    dir = Vector3Normalize(dir);
+
+    float u = 0.5f + atan2f(dir.z, dir.x) / (2.0f * PI);
+    float v = 0.5f - asinf(dir.y) / PI;
+
+    int x = (int)(u * ctx->envMap.width);
+    int y = (int)(v * ctx->envMap.height);
+
+    // wrap horizontal (important)
+    x = (x % ctx->envMap.width + ctx->envMap.width) % ctx->envMap.width;
+
+    // clamp vertical
+    if (y < 0) y = 0;
+    if (y >= ctx->envMap.height) y = ctx->envMap.height - 1; 
+
+    return GetImageColor(ctx->envMap, x, y);
+}
+
+Vector3 GetRayDirection(RenderContext *ctx, int px, int py)
+{
+    float ndcX = (2.0f * px / ctx->screenWidth  - 1.0f);
+    float ndcY = (1.0f - 2.0f * py / ctx->screenHeight);
+
+    float fov = ctx->fov * DEG2RAD;
+    float aspect = (float)ctx->screenWidth / ctx->screenHeight;
+
+    float sx = ndcX * tanf(fov * 0.5f) * aspect;
+    float sy = ndcY * tanf(fov * 0.5f);
+
+    Vector3 dir =
+        Vector3Add(
+            ctx->cameraForward,
+            Vector3Add(
+                Vector3Scale(ctx->cameraRight, sx),
+                Vector3Scale(ctx->cameraUp, sy)
+            )
+        );
+
+    return Vector3Normalize(dir);
+}
+
+void PrecomputeSkyboxLUT(RenderContext* ctx)
+{
+    int W = ctx->screenWidth;
+    int H = ctx->screenHeight;
+
+    ctx->skyU = malloc(W * H * sizeof(float));
+    ctx->skyV = malloc(W * H * sizeof(float));
+
+    for (int y = 0; y < H; y++) {
+        for (int x = 0; x < W; x++) {
+
+            // 1) Direction caméra → pixel
+            Vector3 dir = GetRayDirection(ctx, x, y);
+
+            // 2) Normalisation
+            dir = Vector3Normalize(dir);
+
+            // 3) Conversion en UV équirectangulaire
+            float u = 0.5f + atan2f(dir.z, dir.x) / (2.0f * PI);
+            float v = 0.5f - asinf(dir.y) / PI;
+
+            int idx = y * W + x;
+            ctx->skyU[idx] = u;
+            ctx->skyV[idx] = v;
+        }
+    }
+}
+
+static inline Color SampleEquirectangularUV(RenderContext* ctx, float u, float v)
+{
+    int x = (int)(u * ctx->envMap.width);
+    int y = (int)(v * ctx->envMap.height);
+
+    x = (x % ctx->envMap.width + ctx->envMap.width) % ctx->envMap.width;
+    y = Clamp(y, 0, ctx->envMap.height - 1);
+
+    return GetImageColor(ctx->envMap, x, y);
 }
 #pragma endregion 
 
@@ -747,6 +832,7 @@ void drawTile(RenderContext* ctx, int tx, int ty)
                             // =======================
                             // ENVIRONMENT MAPPING (stylé chrome)
                             // =======================                            
+                            //Color envColor = SampleEquirectangular(ctx, viewDir);
                             Color envColor = base;
 
                             if (ctx->envMap.data != NULL)
@@ -766,7 +852,8 @@ void drawTile(RenderContext* ctx, int tx, int ty)
                                 if (envX < 0) envX += ctx->envMap.width;
                                 if (envY < 0) envY += ctx->envMap.height;
 
-                                envColor = GetImageColor(ctx->envMap, envX, envY);
+                                //envColor = GetImageColor(ctx->envMap, envX, envY);
+                                envColor = SampleEquirectangular(ctx, R);
 
                                 // effet stylé : boost couleurs + contraste
                                 envColor.r = (unsigned char)fminf(envColor.r * 1.3f + 20, 255);
@@ -780,8 +867,8 @@ void drawTile(RenderContext* ctx, int tx, int ty)
                             float fresnel = powf(1.0f - fmaxf(Vector3DotProduct(n, viewDir), 0.0f), 5.0f);
 
                             // effet miroir fort + bord brillant
-                            //float reflectivity = 0.4f + 0.6f * fresnel;
-                            float reflectivity = 0.8f + 0.2f * fresnel;
+                            float reflectivity = 0.4f + 0.6f * fresnel;
+                            //float reflectivity = 0.8f + 0.2f * fresnel;
 
                             Color finalBase = {
                                 (unsigned char)(base.r * (1.0f - reflectivity) + envColor.r * reflectivity),
@@ -790,45 +877,44 @@ void drawTile(RenderContext* ctx, int tx, int ty)
                                 255
                             };
 
-                            // Lighting
-                            float dotNL = Vector3DotProduct(n, ctx->lightDir);
-
-                            if (dotNL <= 0.0f) {
-                                int fbY = ctx->screenHeight - y;
-                                if (fbY >= 0 && fbY < ctx->screenHeight)
-                                    framebuffer[fbY * ctx->screenWidth + px] = (Color){
-                                        (unsigned char)(finalBase.r * ctx->ambient),
-                                        (unsigned char)(finalBase.g * ctx->ambient),
-                                        (unsigned char)(finalBase.b * ctx->ambient),
-                                        255
-                                    };
-                                continue;
-                            }
+                            float dotNL = fmaxf(Vector3DotProduct(n, ctx->lightDir), 0.0f); // ← clamp ici
 
                             float diffuse = dotNL;
-                            //Vector3 viewDir = Vector3Normalize(Vector3Subtract(ctx->cameraPos, pixelPos));
                             Vector3 halfDir = Vector3Normalize(Vector3Add(ctx->lightDir, viewDir));
                             float dotNH = fmaxf(Vector3DotProduct(n, halfDir), 0.0f);
-                            float spec = powf(dotNH, ctx->shininess);
+                            float spec = (dotNL > 0.0f) ? powf(dotNH, ctx->shininess) : 0.0f;
 
-                            float ambient = ctx->ambient;
-                            float intensity = fminf(ambient + diffuse * ctx->diffuse + spec * ctx->specular, 1.0f);
+                            float lighting = fminf(ctx->ambient + diffuse * ctx->diffuse, 1.0f);
 
-                            int r = (int)(finalBase.r * intensity);
-                            int g = (int)(finalBase.g * intensity);
-                            int b = (int)(finalBase.b * intensity);
+                            Color litBase = {
+                                (unsigned char)(base.r * lighting),
+                                (unsigned char)(base.g * lighting),
+                                (unsigned char)(base.b * lighting),
+                                255
+                            };
+
+                            Color final;
+                            if (ctx->envMap.data != NULL) {
+                                float reflectivity = 0.8f + 0.2f * fresnel;
+                                final = (Color){
+                                    (unsigned char)(litBase.r * (1.0f - reflectivity) + envColor.r * reflectivity),
+                                    (unsigned char)(litBase.g * (1.0f - reflectivity) + envColor.g * reflectivity),
+                                    (unsigned char)(litBase.b * (1.0f - reflectivity) + envColor.b * reflectivity),
+                                    255
+                                };
+                            } else {
+                                final = litBase;
+                            }
 
                             float specIntensity = spec * ctx->specular;
-                            r = (int)fminf(r + 255 * specIntensity, 255);
-                            g = (int)fminf(g + 255 * specIntensity, 255);
-                            b = (int)fminf(b + 255 * specIntensity, 255);
+                            final.r = (unsigned char)fminf(final.r + 255 * specIntensity, 255);
+                            final.g = (unsigned char)fminf(final.g + 255 * specIntensity, 255);
+                            final.b = (unsigned char)fminf(final.b + 255 * specIntensity, 255);
 #pragma endregion
 
                             int fbY = ctx->screenHeight - y;
                             if (fbY >= 0 && fbY < ctx->screenHeight)
-                                framebuffer[fbY * ctx->screenWidth + px] = (Color){
-                                    (unsigned char)r, (unsigned char)g, (unsigned char)b, 255
-                                };
+                                framebuffer[fbY * ctx->screenWidth + px] = final;                                
                         }
                     }
                 }
@@ -902,48 +988,95 @@ void* worker(void* arg) {
     ThreadData* td = (ThreadData*)arg;
 
     while (true) {
-        // Attendre le signal de départ
+
+        // 1) Début de frame
         pthread_barrier_wait(&barrierStart);
 
+        // 2) Phase SKYBOX (par lignes)
+        if (!td->ctx->skyU || !td->ctx->skyV || !td->ctx->envMap.data) {
+            // pas de LUT ou pas d'envMap → on saute la skybox
+        } else {
+            for (int y = td->startLine; y < td->endLine; y++) {
+                if (y < 0 || y >= td->ctx->screenHeight) continue;
+
+                int screenY = td->ctx->screenHeight - y;
+                if (screenY < 0 || screenY >= td->ctx->screenHeight) continue;
+
+                int base = screenY * td->ctx->screenWidth;
+                int lutRow = y * td->ctx->screenWidth;
+
+                for (int x = 0; x < td->ctx->screenWidth; x++) {
+                    int idx = lutRow + x;
+                    framebuffer[base + x] =
+                        SampleEquirectangularUV(td->ctx,
+                                                td->ctx->skyU[idx],
+                                                td->ctx->skyV[idx]);
+                }
+            }
+        }
+
+        // 3) Attendre que tous les threads aient fini la skybox
+        pthread_barrier_wait(&barrierSkyboxDone);
+
+        // 4) Phase TRIANGLES (par tiles)
         for (int t = td->startTile; t < td->endTile; t++) {
             int tx = t % tilesX;
             int ty = t / tilesX;
 
-        for (int row = 0; row < td->ctx->tile_size; row++) {
-            int y = ty * td->ctx->tile_size + row;           // y monde comme dans drawTile
-            int screenY = td->ctx->screenHeight - y;        // même calcul que drawTile
-            
-            if (screenY < 0 || screenY >= td->ctx->screenHeight) continue;
-            
-            memset(
-                &framebuffer[screenY * td->ctx->screenWidth + tx * td->ctx->tile_size],
-                0,
-                td->ctx->tile_size * sizeof(Color)
-            );
-        }
+            if (!td->ctx->skyU || !td->ctx->skyV || !td->ctx->envMap.data){
+                for (int row = 0; row < td->ctx->tile_size; row++) {
+                    int y = ty * td->ctx->tile_size + row;           // y monde comme dans drawTile
+                    int screenY = td->ctx->screenHeight - y;        // même calcul que drawTile
+                    
+                    if (screenY < 0 || screenY >= td->ctx->screenHeight) continue;
+                    
+                    memset(
+                        &framebuffer[screenY * td->ctx->screenWidth + tx * td->ctx->tile_size],
+                        0,
+                        td->ctx->tile_size * sizeof(Color)
+                    );
+                }
+            }
 
+            // IMPORTANT : ne plus effacer la tile ici
             drawTile(td->ctx, tx, ty);
         }
 
-        // Signaler que ce thread a fini
+        // 5) Fin de frame
         pthread_barrier_wait(&barrierEnd);
     }
+
     return NULL;
 }
 
 void initThreads(RenderContext* ctx) {
-    int tilesPerThread = (tilesX * tilesY + ctx->num_threads - 1) / ctx->num_threads;
+
+    int totalTiles = tilesX * tilesY;
+    int tilesPerThread = (totalTiles + ctx->num_threads - 1) / ctx->num_threads;
+    int linesPerThread = ctx->screenHeight / ctx->num_threads;
 
     for (int i = 0; i < ctx->num_threads; i++) {
+
         threadData[i].ctx = ctx;
+
+        // --- Découpage TILES ---
         threadData[i].startTile = i * tilesPerThread;
-        threadData[i].endTile = (i + 1) * tilesPerThread;
-        if (threadData[i].endTile > tilesX * tilesY)
-            threadData[i].endTile = tilesX * tilesY;
+        threadData[i].endTile   = (i == ctx->num_threads - 1)
+                                    ? totalTiles
+                                    : (i + 1) * tilesPerThread;
+
+        // --- Découpage LIGNES ---
+        threadData[i].startLine = i * linesPerThread;
+        threadData[i].endLine   = (i == ctx->num_threads - 1)
+                                    ? ctx->screenHeight
+                                    : (i + 1) * linesPerThread;
+
+        // (optionnel si tu n’utilises plus mutex/cond)
         threadData[i].frameReady = false;
         pthread_mutex_init(&threadData[i].mutex, NULL);
         pthread_cond_init(&threadData[i].cond, NULL);
 
+        // --- Création du thread ---
         pthread_create(&threads[i], NULL, worker, &threadData[i]);
     }
 }
@@ -952,10 +1085,13 @@ void renderFrame(RenderContext* ctx) {
     for (int i = 0; i < ctx->num_threads; i++)
         threadData[i].ctx = ctx;
 
-    // Libérer tous les threads
+    // Début de frame → réveiller les workers
     pthread_barrier_wait(&barrierStart);
 
-    // Attendre que tous aient fini
+    // Attendre fin skybox
+    pthread_barrier_wait(&barrierSkyboxDone);
+
+    // Attendre fin triangles
     pthread_barrier_wait(&barrierEnd);
 }
 #pragma endregion
@@ -1155,6 +1291,8 @@ int main(void)
     SetTargetFPS(60);
 
     RenderContext ctx;
+    memset(&ctx, 0, sizeof(RenderContext));
+
     ctx.lightDir = Vector3Normalize((Vector3){ cfg.light_x, cfg.light_y, cfg.light_z });
     ctx.cameraPos = camera.position;
     ctx.screenHeight = cfg.screen_height;
@@ -1171,9 +1309,15 @@ int main(void)
     ctx.fov = cfg.fov;
     ctx.num_threads = cfg.num_threads;
     ctx.tile_size = cfg.tile_size;
+    ctx.envMap_enable = cfg.envMap_enable;
 
-    if (cfg.envMap_enable)
+    if (cfg.envMap_enable) {
         ctx.envMap = LoadImage(cfg.envMap);
+    } else {
+        ctx.envMap.data   = NULL;
+        ctx.envMap.width  = 0;
+        ctx.envMap.height = 0;
+    }
 
     if (cfg.textures_enabled) {
         ctx.texImage  = LoadImage(cfg.tex_diffuse);
@@ -1193,7 +1337,7 @@ int main(void)
     Poly *visiblePolys = malloc(mesh.triangleCount * sizeof(Poly));
     float* zbuffer;
     Image img;
-    Texture2D tex;
+    Texture2D tex;   
 
     for (int i = 0; i < mesh.vertexCount / 3; i++) {
         Poly p;
@@ -1210,12 +1354,26 @@ int main(void)
         tex = LoadTextureFromImage(img);
         UnloadImage(img);
 
+        if (cfg.envMap){
+            
+            Vector3 forward = Vector3Normalize(Vector3Subtract(camera.target, camera.position));
+            Vector3 right   = Vector3Normalize(Vector3CrossProduct(forward, camera.up));
+            Vector3 up      = Vector3CrossProduct(right, forward);
+
+            ctx.cameraForward = forward;
+            ctx.cameraRight   = right;
+            ctx.cameraUp      = up; 
+
+            PrecomputeSkyboxLUT(&ctx);
+        }
+
         // Init
-        pthread_barrier_init(&barrierStart, NULL, cfg.num_threads + 1);
-        pthread_barrier_init(&barrierEnd,   NULL, cfg.num_threads + 1);
+        pthread_barrier_init(&barrierStart,        NULL, cfg.num_threads + 1);
+        pthread_barrier_init(&barrierEnd,          NULL, cfg.num_threads + 1);
+        pthread_barrier_init(&barrierSkyboxDone,   NULL, cfg.num_threads + 1);
 
         initThreads(&ctx);
-        }
+    }
 
     // PASSE 1 : calculer une normale par triangle et l'accumuler sur ses sommets
     Vector3* faceNormals = calloc(vertexCount, sizeof(Vector3));
@@ -1635,6 +1793,8 @@ int main(void)
     if (cfg.zbuffer)
         free(zbuffer);
 
+    if (ctx.skyU) free(ctx.skyU);
+    if (ctx.skyV) free(ctx.skyV);
 
     UnloadModel(model);
     if (ctx.texImage.data)  UnloadImage(ctx.texImage);
