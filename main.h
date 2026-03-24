@@ -31,20 +31,27 @@ typedef struct Region {
 typedef struct {
     Poly* polys;
     int polyCount;
-    int* rootIndices;
+
     Vector3 lightDir;
     float ambient;
     float diffuse;
     float specular;
     float shininess;
+
     Vector3 cameraPos;
+    float far;
+    float near;
+    float fov;
 
     Image texImage;
     Image normalMap;    // normal map
+    int num_threads;
+    int tile_size;
 
     int screenWidth;
     int screenHeight;
 
+    int* rootIndices;
     int tree_depth;
     int contour_arbre;
     int max_poly;
@@ -67,6 +74,6 @@ int region_fully_covered(Region* r, Poly* tri);
 
 int region_outside(Region* r, Poly* tri);
 
-void drawRegionZBuffer(Region* r, Poly* polys, int* indices, int count);
+void drawRegionZBuffer(RenderContext* ctx, Region* r, Poly* polys, int* indices, int count);
 
 void warnock(RenderContext* ctx, Region* r, int* indices, int count, int depth);

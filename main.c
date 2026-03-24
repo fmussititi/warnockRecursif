@@ -9,33 +9,22 @@
 #include <immintrin.h>
 #include "config.h"
 
-#define SCREEN_WIDTH 1600
-#define SCREEN_HEIGHT 900
-
 #pragma region Paramètres généraux et Variables globales
 
 #define BACKFACE_CULLING 0
-#define CAMERA_NEAR 0.01f
-#define CAMERA_FAR  1000.0f
-
-// Parametres pour Warnock
-#define REGION_TILE_SIZE 32
 
 // Parametres pour Tiles
-#define NUM_THREADS 8
-#define TILE_SIZE 32
 #define MAX_TRI_PER_TILE 20000
 #define MAX_TILES 2000
 
-
-int tilesX = SCREEN_WIDTH / TILE_SIZE;
-int tilesY = SCREEN_HEIGHT / TILE_SIZE;
+int tilesX;
+int tilesY;
 atomic_int tilesRemaining;
 // Buffer global
-static Color framebuffer[SCREEN_WIDTH * SCREEN_HEIGHT];
+Color* framebuffer;
 
-ThreadData threadData[NUM_THREADS];
-pthread_t threads[NUM_THREADS];
+ThreadData* threadData;
+pthread_t* threads;
 pthread_barrier_t barrierStart;  // main attend que les threads soient prêts
 pthread_barrier_t barrierEnd;    // main attend que les threads aient fini
 
@@ -225,12 +214,12 @@ static inline bool AABBOverlap(Region* r, Poly* p)
              p->maxY < r->y1 || p->minY > r->y2);
 }
 
-void drawRegionZBuffer(Region* r, Poly* polys, int* indices, int count)
+void drawRegionZBuffer(RenderContext* ctx, Region* r, Poly* polys, int* indices, int count)
 {
     int width  = r->x2 - r->x1;
     int height = r->y2 - r->y1;
 
-    static float zbuf[REGION_TILE_SIZE * REGION_TILE_SIZE];
+    float zbuf[ctx->tile_size * ctx->tile_size];
 
     for (int i = 0; i < width * height; i++)
         zbuf[i] = 1e9f;
@@ -289,7 +278,7 @@ void drawRegionZBuffer(Region* r, Poly* polys, int* indices, int count)
                     if (z < zbuf[index])
                     {
                         zbuf[index] = z;
-                        DrawRectangle(x, SCREEN_HEIGHT - y, width+1, height+1, tri->couleur);
+                        DrawRectangle(x, ctx->screenHeight - y, width+1, height+1, tri->couleur);
                     }
                 }
 
@@ -408,7 +397,7 @@ void warnock(RenderContext* ctx, Region* r, int* indices, int count, int depth) 
             }
         }
         //DrawRectangle(left, top, width, height, ctx->polys[indices[best]].couleur);
-        drawRegionZBuffer(r, ctx->polys, indices, count);
+        drawRegionZBuffer(ctx, r, ctx->polys, indices, count);
         if (ctx->contour_arbre){
             //DrawRectangleLines(left, top, width, height, ctx->polys[indices[best]].couleur);
         }
@@ -479,7 +468,7 @@ void warnock(RenderContext* ctx, Region* r, int* indices, int count, int depth) 
 /*************************************** Fonction pour ZBuffer rendering ***********************************/
 
 //** Dessin d'un triangle dans le zbuffer **/
-void drawTriangleZ(Poly* tri, float* zbuffer)
+void drawTriangleZ(RenderContext* ctx, Poly* tri, float* zbuffer)
 {
     // bounding box écran
     int minX = fmaxf(0, floorf(fminf(tri->p0.x, fminf(tri->p1.x, tri->p2.x))));
@@ -524,7 +513,7 @@ void drawTriangleZ(Poly* tri, float* zbuffer)
                 if (z < zbuffer[index])
                 {
                     zbuffer[index] = z;
-                    DrawPixel(x, SCREEN_HEIGHT - y, tri->couleur);
+                    DrawPixel(x, ctx->screenHeight - y, tri->couleur);
                 }
             }
         }
@@ -574,10 +563,10 @@ void binTriangles(RenderContext* ctx)
 
                 // Optimisation --> on range uniquement dans les tiles utiles
                 Region myTile = {
-                    tx * TILE_SIZE,
-                    ty * TILE_SIZE,
-                    (tx+1) * TILE_SIZE,
-                    (ty+1) * TILE_SIZE
+                    tx * ctx->tile_size,
+                    ty * ctx->tile_size,
+                    (tx+1) * ctx->tile_size,
+                    (ty+1) * ctx->tile_size
                 };
 
                 if (!AABBOverlap(&myTile, p))
@@ -594,15 +583,15 @@ void binTriangles(RenderContext* ctx)
 
 void drawTile(RenderContext* ctx, int tx, int ty)
 {
-    int x0 = tx * TILE_SIZE;
-    int y0 = ty * TILE_SIZE;
-    int x1 = x0 + TILE_SIZE;
-    int yEnd = y0 + TILE_SIZE; // ← renommer y1 en yEnd
+    int x0 = tx * ctx->tile_size;
+    int y0 = ty * ctx->tile_size;
+    int x1 = x0 + ctx->tile_size;
+    int yEnd = y0 + ctx->tile_size; // ← renommer y1 en yEnd
 
     Tile* tile = &tiles[ty * tilesX + tx];
 
-    float zbuf[TILE_SIZE * TILE_SIZE];
-    for (int i = 0; i < TILE_SIZE * TILE_SIZE; i++)
+    float zbuf[ctx->tile_size * ctx->tile_size];
+    for (int i = 0; i < ctx->tile_size * ctx->tile_size; i++)
         zbuf[i] = 1e9f;
 
     for (int t = 0; t < tile->count; t++)
@@ -688,7 +677,7 @@ void drawTile(RenderContext* ctx, int tx, int ty)
 
                         int lx = px - x0;
                         int ly = y  - y0;
-                        int index = ly * TILE_SIZE + lx;
+                        int index = ly * ctx->tile_size + lx;
 
                         if (z < zbuf[index])
                         {
@@ -840,14 +829,14 @@ void debugDrawTileCoverage(RenderContext* ctx)
         {
             for (int tx = minTileX; tx <= maxTileX; tx++)
             {
-                int x = tx * TILE_SIZE;
-                int y = ty * TILE_SIZE;
+                int x = tx * ctx->tile_size;
+                int y = ty * ctx->tile_size;
 
                 DrawRectangle(
                     x,
-                    ctx->screenHeight - (y + TILE_SIZE),
-                    TILE_SIZE,
-                    TILE_SIZE,
+                    ctx->screenHeight - (y + ctx->tile_size),
+                    ctx->tile_size,
+                    ctx->tile_size,
                     col
                 );
             }
@@ -867,16 +856,16 @@ void* worker(void* arg) {
             int tx = t % tilesX;
             int ty = t / tilesX;
 
-        for (int row = 0; row < TILE_SIZE; row++) {
-            int y = ty * TILE_SIZE + row;           // y monde comme dans drawTile
-            int screenY = SCREEN_HEIGHT - y;        // même calcul que drawTile
+        for (int row = 0; row < td->ctx->tile_size; row++) {
+            int y = ty * td->ctx->tile_size + row;           // y monde comme dans drawTile
+            int screenY = td->ctx->screenHeight - y;        // même calcul que drawTile
             
-            if (screenY < 0 || screenY >= SCREEN_HEIGHT) continue;
+            if (screenY < 0 || screenY >= td->ctx->screenHeight) continue;
             
             memset(
-                &framebuffer[screenY * SCREEN_WIDTH + tx * TILE_SIZE],
+                &framebuffer[screenY * td->ctx->screenWidth + tx * td->ctx->tile_size],
                 0,
-                TILE_SIZE * sizeof(Color)
+                td->ctx->tile_size * sizeof(Color)
             );
         }
 
@@ -890,9 +879,9 @@ void* worker(void* arg) {
 }
 
 void initThreads(RenderContext* ctx) {
-    int tilesPerThread = (tilesX * tilesY + NUM_THREADS - 1) / NUM_THREADS;
+    int tilesPerThread = (tilesX * tilesY + ctx->num_threads - 1) / ctx->num_threads;
 
-    for (int i = 0; i < NUM_THREADS; i++) {
+    for (int i = 0; i < ctx->num_threads; i++) {
         threadData[i].ctx = ctx;
         threadData[i].startTile = i * tilesPerThread;
         threadData[i].endTile = (i + 1) * tilesPerThread;
@@ -907,7 +896,7 @@ void initThreads(RenderContext* ctx) {
 }
 
 void renderFrame(RenderContext* ctx) {
-    for (int i = 0; i < NUM_THREADS; i++)
+    for (int i = 0; i < ctx->num_threads; i++)
         threadData[i].ctx = ctx;
 
     // Libérer tous les threads
@@ -1016,12 +1005,12 @@ bool triangleInFrustum(Frustum* f, Vector3 v0, Vector3 v1, Vector3 v2)
 }
 
 // Construire la matrice de projection perspective
-Matrix buildProjectionMatrix(Camera3D camera)
+Matrix buildProjectionMatrix(RenderContext* ctx)
 {
-    float aspect = (float)SCREEN_WIDTH / (float)SCREEN_HEIGHT;
-    float fovy   = camera.fovy * DEG2RAD;
-    float near   = CAMERA_NEAR;
-    float far    = CAMERA_FAR;
+    float aspect = (float)ctx->screenWidth / (float)ctx->screenHeight;
+    float fovy   = ctx->fov * DEG2RAD;
+    float near   = ctx->near;
+    float far    = ctx->far;
 
     return MatrixPerspective(fovy, aspect, near, far);
 }
@@ -1051,14 +1040,36 @@ int main(void)
     // Charger la config au démarrage
     Config cfg = loadConfig("config.ini");
 
+    tilesX = cfg.screen_width / cfg.tile_size;
+    tilesY = cfg.screen_height / cfg.tile_size;
+
+    // Utiliser malloc après lecture de la config
+    framebuffer = malloc(cfg.screen_width * cfg.screen_height * sizeof(Color));
+    if (!framebuffer) {
+        printf("ERREUR: malloc framebuffer failed!\n");
+        return 1;
+    }
+
+    threadData = malloc(cfg.num_threads * sizeof(ThreadData));
+    if (!threadData) {
+        printf("ERREUR: malloc threadData failed!\n");
+        return 1;
+    }
+
+    threads = malloc(cfg.num_threads * sizeof(pthread_t));
+    if (!threads) {
+        printf("ERREUR: malloc threads failed!\n");
+        return 1;
+    }
+
     if (cfg.warnock)
-        InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "Hybride : Warnock + ZBuffer rendering");
+        InitWindow(cfg.screen_width, cfg.screen_height, "Hybride : Warnock + ZBuffer rendering");
 
     if (cfg.zbuffer)
-        InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "ZBuffer rendering");
+        InitWindow(cfg.screen_width, cfg.screen_height, "ZBuffer rendering");
 
     if (cfg.tiles)
-        InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "Tiles rendering");
+        InitWindow(cfg.screen_width, cfg.screen_height, "Tiles rendering");
 
 
 #pragma region Initialisations
@@ -1095,6 +1106,11 @@ int main(void)
     ctx.diffuse = cfg.diffuse;
     ctx.shininess = cfg.shininess;
     ctx.specular = cfg.specular;
+    ctx.far = cfg.far;
+    ctx.near = cfg.near;
+    ctx.fov = cfg.fov;
+    ctx.num_threads = cfg.num_threads;
+    ctx.tile_size = cfg.tile_size;
 
     if (cfg.textures_enabled) {
         ctx.texImage  = LoadImage(cfg.tex_diffuse);
@@ -1124,16 +1140,16 @@ int main(void)
     }
 
     if (cfg.zbuffer)
-        zbuffer = malloc(SCREEN_WIDTH * SCREEN_HEIGHT * sizeof(float));
+        zbuffer = malloc(cfg.screen_width * cfg.screen_height * sizeof(float));
 
     if (cfg.tiles){
-        img = GenImageColor(SCREEN_WIDTH, SCREEN_HEIGHT, RAYWHITE);
+        img = GenImageColor(cfg.screen_width, cfg.screen_height, RAYWHITE);
         tex = LoadTextureFromImage(img);
         UnloadImage(img);
 
         // Init
-        pthread_barrier_init(&barrierStart, NULL, NUM_THREADS + 1);
-        pthread_barrier_init(&barrierEnd,   NULL, NUM_THREADS + 1);
+        pthread_barrier_init(&barrierStart, NULL, cfg.num_threads + 1);
+        pthread_barrier_init(&barrierEnd,   NULL, cfg.num_threads + 1);
 
         initThreads(&ctx);
         }
@@ -1199,7 +1215,7 @@ int main(void)
         ClearBackground(BLACK);
 
         // Frustum culling
-        Matrix proj    = buildProjectionMatrix(camera);
+        Matrix proj    = buildProjectionMatrix(&ctx);
         Matrix view    = GetCameraMatrix(camera);
         Matrix vp      = MatrixMultiply(view, proj);  // ← view PUIS proj
         Frustum frustum = extractFrustum(vp);
@@ -1427,10 +1443,10 @@ int main(void)
         if (IsKeyDown(KEY_L))     camera.target.z -= 1.0f;
 
         if (cfg.warnock){
-            DrawText(TextFormat("Hybride : Warnock + ZBuffer, Profondeur de l'arbre = %d", cfg.tree_depth), 10, 10, 20, WHITE);
+            DrawText(TextFormat("Hybride : Warnock + ZBuffer, Profondeur de l'arbre = %d", cfg.tree_depth), 10, 10, 20, RED);
 
-            Region root = {0,0,ctx.screenWidth,ctx.screenHeight};
-            int indices[ctx.max_poly];
+            Region root = {0,0,cfg.screen_width,cfg.screen_height};
+            int indices[cfg.max_poly];
             for (int i = 0; i < polyCount; i++)
                 indices[i] = i;
 
@@ -1439,15 +1455,15 @@ int main(void)
         }
 
         if (cfg.zbuffer){
-            DrawText("ZBuffer", 10, 10, 20, WHITE);
+            DrawText("ZBuffer", 10, 10, 20, RED);
 
-            for (int i = 0; i < ctx.screenWidth * ctx.screenHeight; i++)
+            for (int i = 0; i < cfg.screen_width * cfg.screen_height; i++)
                 zbuffer[i] = 1e9; // très loin
 
             for (int i = 0; i < polyCount; i++)
             {
                 //drawTriangleZ(&visiblePolys[i], zbuffer);
-                drawTriangleZ(&ctx.polys[i], zbuffer);
+                drawTriangleZ(&ctx, &ctx.polys[i], zbuffer);
             }
         }
 
@@ -1477,10 +1493,10 @@ int main(void)
 
                         if (tile->count == 0) continue;
 
-                        int x = tx * TILE_SIZE;
-                        int y = ty * TILE_SIZE;
+                        int x = tx * cfg.tile_size;
+                        int y = ty * cfg.tile_size;
 
-                        DrawRectangleLines(x, ctx.screenHeight - (y + TILE_SIZE), TILE_SIZE, TILE_SIZE, GREEN);
+                        DrawRectangleLines(x, ctx.screenHeight - (y + cfg.tile_size), cfg.tile_size, cfg.tile_size, GREEN);
                     }
                 }
                 */
@@ -1493,8 +1509,8 @@ int main(void)
 
                         //if (tile->count == 0) continue;
 
-                        int x = tx * TILE_SIZE;
-                        int y = ty * TILE_SIZE;
+                        int x = tx * cfg.tile_size;
+                        int y = ty * cfg.tile_size;
 
                         int c = tile->count + 17;
 
@@ -1514,23 +1530,23 @@ int main(void)
                             alpha
                         };
 
-                        DrawRectangleLinesEx((Rectangle){x, ctx.screenHeight - (y + TILE_SIZE), TILE_SIZE, TILE_SIZE},1.5f, col);
-                        DrawText(TextFormat("%d", tile->count), x+2, ctx.screenHeight - y - 14, 10, whiteText);
+                        DrawRectangleLinesEx((Rectangle){x, cfg.screen_height - (y + cfg.tile_size), cfg.tile_size, cfg.tile_size},1.5f, col);
+                        DrawText(TextFormat("%d", tile->count), x+2, cfg.screen_height - y - 14, 10, whiteText);
                     }
                 }
 
                 //debugDrawTileCoverage(&ctx);
             }
 
-        DrawText("Tiles", 10, 10, 20, WHITE);
+        DrawText("Tiles", 10, 10, 20, RED);
         }
 
         DrawText(TextFormat("FPS = %d", GetFPS()),
-         10, 40, 20, WHITE);
+         10, 40, 20, RED);
 
-        DrawText(TextFormat("Triangles total  : %d", displayTotal), 10, 70, 20, WHITE);
-        DrawText(TextFormat("Triangles rendus : %d", displayRendus),  10, 95, 20, WHITE);
-        DrawText(TextFormat("Triangles rejetés: %d", displayRejetes), 10, 120, 20, WHITE);
+        DrawText(TextFormat("Triangles total  : %d", displayTotal), 10, 70, 20, RED);
+        DrawText(TextFormat("Triangles rendus : %d", displayRendus),  10, 95, 20, RED);
+        DrawText(TextFormat("Triangles rejetés: %d", displayRejetes), 10, 120, 20, RED);
 
         // Afficher la position pour la noter
         DrawText(TextFormat("pos: %.1f %.1f %.1f", 
@@ -1546,6 +1562,9 @@ int main(void)
     }
 #pragma endregion
 
+    free(threads);
+    free(threadData);
+    free(framebuffer);
     free(smoothNormals);
     free(projected);
     free(z);
