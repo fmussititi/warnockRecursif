@@ -17,6 +17,7 @@ typedef struct poly
     Vector3 n0, n1, n2;  // normales aux 3 sommets
     Vector3 v0, v1, v2;  // positions 3D world space
     Vector2 uv0, uv1, uv2;  // coordonnées UV aux 3 sommets
+    Color c0, c1, c2;
 
     Vector3 tangent;    // vecteur T
     Vector3 bitangent;  // vecteur B

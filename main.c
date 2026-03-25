@@ -200,7 +200,7 @@ void flatShading(RenderContext* ctx, Poly* p, Matrix view)
     normal = Vector3Normalize(normal);
 
     float intensity = Vector3DotProduct(normal, ctx->lightDir);
-    float ambient = 0.2f;
+    float ambient = ctx->ambient;
     intensity = fmaxf(intensity, ambient);
 
     p->couleur = (Color){
@@ -209,6 +209,35 @@ void flatShading(RenderContext* ctx, Poly* p, Matrix view)
                     (unsigned char)(p->couleur.b * intensity),
                     255
                 };
+}
+
+void gouraudShading(RenderContext* ctx, Poly* p)
+{
+    // Calcul de l'intensité lumineuse pour chaque sommet
+    // (les normales sont déjà transformées dans p->n0/n1/n2)
+
+    float i0 = fmaxf(Vector3DotProduct(p->n0, ctx->lightDir), ctx->ambient);
+    float i1 = fmaxf(Vector3DotProduct(p->n1, ctx->lightDir), ctx->ambient);
+    float i2 = fmaxf(Vector3DotProduct(p->n2, ctx->lightDir), ctx->ambient);
+
+    p->c0 = (Color){
+        (unsigned char)(p->couleur.r * i0),
+        (unsigned char)(p->couleur.g * i0),
+        (unsigned char)(p->couleur.b * i0),
+        255
+    };
+    p->c1 = (Color){
+        (unsigned char)(p->couleur.r * i1),
+        (unsigned char)(p->couleur.g * i1),
+        (unsigned char)(p->couleur.b * i1),
+        255
+    };
+    p->c2 = (Color){
+        (unsigned char)(p->couleur.r * i2),
+        (unsigned char)(p->couleur.g * i2),
+        (unsigned char)(p->couleur.b * i2),
+        255
+    };
 }
 
 #pragma endregion 
@@ -594,7 +623,8 @@ void drawTriangleZ(RenderContext* ctx, Poly* tri, float* zbuffer)
             if (CheckCollisionPointTriangle(p, tri->p0, tri->p1, tri->p2))
             {
                 // interpolation simple du z (approx)
-                //float z = (tri->z0 + tri->z1 + tri->z2) / 3.0f;
+                // float z = (tri->z0 + tri->z1 + tri->z2) / 3.0f;
+
                 float area = 
                     (tri->p1.x - tri->p0.x)*(tri->p2.y - tri->p0.y) -
                     (tri->p2.x - tri->p0.x)*(tri->p1.y - tri->p0.y);
@@ -617,12 +647,22 @@ void drawTriangleZ(RenderContext* ctx, Poly* tri, float* zbuffer)
 
                 float z = w0*tri->z0 + w1*tri->z1 + w2*tri->z2;
 
+
                 int index = y * ctx->screenWidth + x;
 
                 if (z < zbuffer[index])
                 {
                     zbuffer[index] = z;
-                    DrawPixel(x, ctx->screenHeight - y, tri->couleur);
+
+                    // ← Interpolation Gouraud
+                    Color final = (Color){
+                        (unsigned char)(w0*tri->c0.r + w1*tri->c1.r + w2*tri->c2.r),
+                        (unsigned char)(w0*tri->c0.g + w1*tri->c1.g + w2*tri->c2.g),
+                        (unsigned char)(w0*tri->c0.b + w1*tri->c1.b + w2*tri->c2.b),
+                        255
+                    };
+
+                    DrawPixel(x, ctx->screenHeight - y, final);
                 }
             }
         }
@@ -1562,7 +1602,9 @@ int main(void)
             p->bitangent = Vector3Normalize(Vector3Transform(p->bitangent, rotation));
 
             p->couleur = PolyList[i].couleur;
-            if (!cfg.tiles || (cfg.tiles && !cfg.textures_enabled))
+            if (cfg.zbuffer)
+                gouraudShading(&ctx, p);
+            if (cfg.warnock)
                 flatShading(&ctx, p, view);
 
             p->visible = true;
