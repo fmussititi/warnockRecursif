@@ -55,6 +55,10 @@ typedef struct {
     Image normalMap;    // normal map
     Image envMap;
     int envMap_enable;
+    int blur;
+    int radius;
+    int pass;
+
     int num_threads;
     int tile_size;
 

@@ -559,7 +559,7 @@ void drawTriangleZ(RenderContext* ctx, Poly* tri, float* zbuffer)
     int minX = fmaxf(0, floorf(fminf(tri->p0.x, fminf(tri->p1.x, tri->p2.x))));
     int maxX = fminf(ctx->screenWidth-1, ceilf(fmaxf(tri->p0.x, fmaxf(tri->p1.x, tri->p2.x))));
     int minY = fmaxf(0, floorf(fminf(tri->p0.y, fminf(tri->p1.y, tri->p2.y))));
-    int maxY = fminf(ctx->screenWidth-1, ceilf(fmaxf(tri->p0.y, fmaxf(tri->p1.y, tri->p2.y))));
+    int maxY = fminf(ctx->screenHeight-1, ceilf(fmaxf(tri->p0.y, fmaxf(tri->p1.y, tri->p2.y))));
 
     for (int y = minY; y <= maxY; y++)
     {
@@ -1003,6 +1003,38 @@ void* worker(void* arg) {
                                                 td->ctx->skyV[idx]);
                 }
             }
+
+            if (td->ctx->blur) {
+                // ← BLUR SKYBOX (sur les lignes du thread)
+                for (int pass = 0; pass < td->ctx->pass; pass++) {
+                    int radius = td->ctx->radius; // ajuster : 1=léger, 5=fort
+                    for (int y = td->startLine; y < td->endLine; y++) {
+                        int screenY = td->ctx->screenHeight - y;
+                        if (screenY < 0 || screenY >= td->ctx->screenHeight) continue;
+
+                        for (int x = 0; x < td->ctx->screenWidth; x++) {
+                            int r = 0, g = 0, b = 0, count = 0;
+
+                            for (int dy = -radius; dy <= radius; dy++) {
+                                for (int dx = -radius; dx <= radius; dx++) {
+                                    int ny = screenY + dy;
+                                    int nx = x + dx;
+                                    if (nx < 0 || nx >= td->ctx->screenWidth) continue;
+                                    if (ny < 0 || ny >= td->ctx->screenHeight) continue;
+
+                                    Color c = framebuffer[ny * td->ctx->screenWidth + nx];
+                                    r += c.r; g += c.g; b += c.b;
+                                    count++;
+                                }
+                            }
+
+                            framebuffer[screenY * td->ctx->screenWidth + x] = (Color){
+                                r / count, g / count, b / count, 255
+                            };
+                        }
+                    }
+                }
+            }
         }
 
         // 3) Attendre que tous les threads aient fini la skybox
@@ -1294,14 +1326,18 @@ int main(void)
     ctx.diffuse = cfg.diffuse;
     ctx.shininess = cfg.shininess;
     ctx.specular = cfg.specular;
+    ctx.refl1 = cfg.refl1;
+    ctx.refl2 = cfg.refl2;
     ctx.far = cfg.far;
     ctx.near = cfg.near;
     ctx.fov = cfg.fov;
     ctx.num_threads = cfg.num_threads;
     ctx.tile_size = cfg.tile_size;
     ctx.envMap_enable = cfg.envMap_enable;
-    ctx.refl1 = cfg.refl1;
-    ctx.refl2 = cfg.refl2;
+    ctx.blur = cfg.blur;
+    ctx.radius = cfg.radius;
+    ctx.pass = cfg.pass;
+
 
     if (cfg.envMap_enable) {
         ctx.envMap = LoadImage(cfg.envMap);
@@ -1411,7 +1447,7 @@ int main(void)
         Matrix rotation = MatrixRotateXYZ((Vector3){ rotX, rotY, rotZ });
         //Matrix rotation = MatrixRotateXYZ((Vector3){ 0, rotY, 0 });
 
-        if (cfg.envMap){
+        if (cfg.envMap && cfg.tiles){
             
             Vector3 forward = Vector3Normalize(Vector3Subtract(camera.target, camera.position));
             Vector3 right   = Vector3Normalize(Vector3CrossProduct(forward, camera.up));

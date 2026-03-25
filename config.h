@@ -39,6 +39,11 @@ typedef struct {
     int envMap_enable;
     char envMap[256];
 
+    // SkyBox
+    int blur;
+    int radius;
+    int pass;
+
     // Tiles
     int num_threads;
     int tile_size;
@@ -77,6 +82,9 @@ Config loadConfig(const char* filename)
         .tex_normal     = "./ressources/rusty_metal_02_nor_gl_1k.jpg",
         .envMap_enable  = 1,
         .envMap         = "./ressources/bell_tower.jpg",
+        .blur           = 1,
+        .radius         = 5,
+        .pass           = 3,
         .num_threads    = 8,
         .tile_size      = 32,
         .max_tri_per_tile = 20000,
@@ -141,6 +149,9 @@ Config loadConfig(const char* filename)
         else if (!strcmp(k, "normal_tex"))        strncpy(cfg.tex_normal,  v, 255);
         else if (!strcmp(k, "enableEnvMap"))      cfg.envMap_enable     = atoi(v);
         else if (!strcmp(k, "envMap"))            strncpy(cfg.envMap,      v, 255);
+        else if (!strcmp(k, "blur"))              cfg.blur              = atoi(v);
+        else if (!strcmp(k, "radius"))            cfg.radius            = atoi(v);
+        else if (!strcmp(k, "pass"))              cfg.pass              = atoi(v);
         else if (!strcmp(k, "num_threads"))       cfg.num_threads       = atoi(v);
         else if (!strcmp(k, "tile_size"))         cfg.tile_size         = atoi(v);
         else if (!strcmp(k, "max_tri_per_tile"))  cfg.max_tri_per_tile  = atoi(v);
