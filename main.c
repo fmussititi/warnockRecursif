@@ -11,8 +11,6 @@
 
 #pragma region Paramètres généraux et Variables globales
 
-#define BACKFACE_CULLING 0
-
 // Parametres pour Tiles
 #define MAX_TRI_PER_TILE 20000
 #define MAX_TILES 2000
@@ -187,6 +185,32 @@ static inline Color SampleEquirectangularUV(RenderContext* ctx, float u, float v
 
     return GetImageColor(ctx->envMap, x, y);
 }
+
+void flatShading(RenderContext* ctx, Poly* p, Matrix view)
+{
+    // passer en espace caméra
+    Vector3 v0 = Vector3Transform(p->v0, view);
+    Vector3 v1 = Vector3Transform(p->v1, view);
+    Vector3 v2 = Vector3Transform(p->v2, view);
+
+    Vector3 e1 = Vector3Subtract(v1, v0);
+    Vector3 e2 = Vector3Subtract(v2, v0);
+
+    Vector3 normal = Vector3CrossProduct(e1, e2);
+    normal = Vector3Normalize(normal);
+
+    float intensity = Vector3DotProduct(normal, ctx->lightDir);
+    float ambient = 0.2f;
+    intensity = fmaxf(intensity, ambient);
+
+    p->couleur = (Color){
+                    (unsigned char)(p->couleur.r * intensity),
+                    (unsigned char)(p->couleur.g * intensity),
+                    (unsigned char)(p->couleur.b * intensity),
+                    255
+                };
+}
+
 #pragma endregion 
 
 
@@ -1359,8 +1383,6 @@ int main(void)
 
     // Tableau de normales par sommet
     Vector3* smoothNormals = calloc(vertexCount, sizeof(Vector3));
-    Vector2* projected = malloc(vertexCount * sizeof(Vector2));
-    float* z = malloc(vertexCount * sizeof(float));
     Poly* PolyList = malloc(mesh.vertexCount/3 * sizeof(Poly));
     Poly *visiblePolys = malloc(mesh.triangleCount * sizeof(Poly));
     float* zbuffer;
@@ -1447,7 +1469,7 @@ int main(void)
         Matrix rotation = MatrixRotateXYZ((Vector3){ rotX, rotY, rotZ });
         //Matrix rotation = MatrixRotateXYZ((Vector3){ 0, rotY, 0 });
 
-        if (cfg.envMap && cfg.tiles){
+        if (ctx.envMap.data && cfg.tiles){
             
             Vector3 forward = Vector3Normalize(Vector3Subtract(camera.target, camera.position));
             Vector3 right   = Vector3Normalize(Vector3CrossProduct(forward, camera.up));
@@ -1475,195 +1497,110 @@ int main(void)
         Matrix view    = GetCameraMatrix(camera);
         Matrix vp      = MatrixMultiply(view, proj);  // ← view PUIS proj
         Frustum frustum = extractFrustum(vp);
-
-        for (int i = 0; i < vertexCount; i++) {
-            Vector3 v = getVertex(mesh, i);
-            v = Vector3Transform(v, rotation);
-            projected[i] = GetWorldToScreen(v, camera);
-
-            //Matrix view = GetCameraMatrix(camera);
-            Vector3 viewPos = Vector3Transform(v, view);
-
-            z[i] = viewPos.z;
-            //z[i] = v.z;
-        }
         
-#pragma region Première boucle mesh: Initialisation des Polys de la PolyList 
+#pragma region BOUCLE qui Prépare les polygones : transforme, filtre (backface/frustum) et projette chaque triangle du mesh en Poly prêt à rasterizer.
+        int inc = 0;
+        for (int i = 0; i < mesh.triangleCount; i++)
+        {
+            int i0 = i*3, i1 = i*3+1, i2 = i*3+2;
 
-        for (int i = 0; i < mesh.vertexCount / 3; i++) {
-            int i0 = i * 3;
-            int i1 = i * 3 + 1;
-            int i2 = i * 3 + 2;
+            // Vertices transformés (une seule fois)
+            Vector3 v0 = Vector3Transform(getVertex(mesh, i0), rotation);
+            Vector3 v1 = Vector3Transform(getVertex(mesh, i1), rotation);
+            Vector3 v2 = Vector3Transform(getVertex(mesh, i2), rotation);
 
-            Poly* p = &PolyList[i];
+            // Backface culling
+            if (cfg.backface_culling && isBackFace(v0, v1, v2, ctx.cameraPos))
+                continue;
 
-            p->p0 = projected[i0];
-            p->p1 = projected[i1];
-            p->p2 = projected[i2];
+            // Frustum culling
+            if (cfg.frustum_culling) {
+                Vector3 aabbMin = { fminf(v0.x,fminf(v1.x,v2.x)), fminf(v0.y,fminf(v1.y,v2.y)), fminf(v0.z,fminf(v1.z,v2.z)) };
+                Vector3 aabbMax = { fmaxf(v0.x,fmaxf(v1.x,v2.x)), fmaxf(v0.y,fmaxf(v1.y,v2.y)), fmaxf(v0.z,fmaxf(v1.z,v2.z)) };
+                if (!aabbInFrustum(&frustum, aabbMin, aabbMax)) continue;
+                if (!triangleInFrustum(&frustum, v0, v1, v2))  continue;
+            }
 
-            p->z0 = z[i0];
-            p->z1 = z[i1];
-            p->z2 = z[i2];
+            Poly* p = &visiblePolys[inc];
 
+            // Projection
+            p->p0 = GetWorldToScreen(v0, camera);
+            p->p1 = GetWorldToScreen(v1, camera);
+            p->p2 = GetWorldToScreen(v2, camera);
+
+            // Z (espace caméra)
+            Vector3 cv0 = Vector3Transform(v0, view);
+            Vector3 cv1 = Vector3Transform(v1, view);
+            Vector3 cv2 = Vector3Transform(v2, view);
+            p->z0 = cv0.z; p->z1 = cv1.z; p->z2 = cv2.z;
             p->zmin = fminf(p->z0, fminf(p->z1, p->z2));
             p->zmax = fmaxf(p->z0, fmaxf(p->z1, p->z2));
 
+            // Bounding box écran
             float minX = fminf(p->p0.x, fminf(p->p1.x, p->p2.x));
             float maxX = fmaxf(p->p0.x, fmaxf(p->p1.x, p->p2.x));
             float minY = fminf(p->p0.y, fminf(p->p1.y, p->p2.y));
             float maxY = fmaxf(p->p0.y, fmaxf(p->p1.y, p->p2.y));
 
-            // écran
             p->minX = fmaxf(0.0f, minX);
-            p->maxX = fminf(ctx.screenWidth-1, maxX);
+            p->maxX = fminf(ctx.screenWidth-1,  maxX);
             p->minY = fmaxf(0.0f, minY);
             p->maxY = fminf(ctx.screenHeight-1, maxY);
 
-            if (p->maxX < 0 || p->minX > ctx.screenWidth-1 ||
-                p->maxY < 0 || p->minY > ctx.screenHeight-1)
-            {
-                p->visible = false;
-                continue;
-            }
-            p->visible = true;
+            if (p->maxX < p->minX || p->maxY < p->minY) continue;
 
             p->tileMinX = (int)(p->minX) / ctx.tile_size;
             p->tileMaxX = (int)(p->maxX) / ctx.tile_size;
             p->tileMinY = (int)(p->minY) / ctx.tile_size;
             p->tileMaxY = (int)(p->maxY) / ctx.tile_size;
 
+            // UVs
             p->uv0 = getUV(mesh, i0);
             p->uv1 = getUV(mesh, i1);
             p->uv2 = getUV(mesh, i2);
 
-            // Calcul tangent/bitangent à partir des UVs
-            Vector3 edge1 = Vector3Subtract(p->v1, p->v0);
-            Vector3 edge2 = Vector3Subtract(p->v2, p->v0);
+            // Vertices world space (pour lighting)
+            p->v0 = v0; p->v1 = v1; p->v2 = v2;
 
-            float duv1x = p->uv1.x - p->uv0.x;
-            float duv1y = p->uv1.y - p->uv0.y;
-            float duv2x = p->uv2.x - p->uv0.x;
-            float duv2y = p->uv2.y - p->uv0.y;
-
+            // Tangent/Bitangent (maintenant v0/v1/v2 sont bien assignés)
+            Vector3 edge1 = Vector3Subtract(v1, v0);
+            Vector3 edge2 = Vector3Subtract(v2, v0);
+            float duv1x = p->uv1.x - p->uv0.x, duv1y = p->uv1.y - p->uv0.y;
+            float duv2x = p->uv2.x - p->uv0.x, duv2y = p->uv2.y - p->uv0.y;
             float denom = duv1x * duv2y - duv2x * duv1y;
 
-            p->v0 = Vector3Transform(getVertex(mesh, i0), rotation);
-            p->v1 = Vector3Transform(getVertex(mesh, i1), rotation);
-            p->v2 = Vector3Transform(getVertex(mesh, i2), rotation);
-
             if (fabsf(denom) < 1e-6f) {
-                // Dégénéré → tangente par défaut
-                p->tangent   = (Vector3){1, 0, 0};
-                p->bitangent = (Vector3){0, 1, 0};
+                p->tangent   = (Vector3){1,0,0};
+                p->bitangent = (Vector3){0,1,0};
             } else {
                 float f = 1.0f / denom;
-                p->tangent = Vector3Normalize((Vector3){
-                    f * (duv2y * edge1.x - duv1y * edge2.x),
-                    f * (duv2y * edge1.y - duv1y * edge2.y),
-                    f * (duv2y * edge1.z - duv1y * edge2.z)
-                });
+                p->tangent   = Vector3Normalize((Vector3){
+                    f*(duv2y*edge1.x - duv1y*edge2.x),
+                    f*(duv2y*edge1.y - duv1y*edge2.y),
+                    f*(duv2y*edge1.z - duv1y*edge2.z)});
                 p->bitangent = Vector3Normalize((Vector3){
-                    f * (-duv2x * edge1.x + duv1x * edge2.x),
-                    f * (-duv2x * edge1.y + duv1x * edge2.y),
-                    f * (-duv2x * edge1.z + duv1x * edge2.z)
-                });
-            }
-        }
-#pragma endregion
-
-#pragma region Deuxième boucle mesh: BackFace Culling et Frustum Cullin => VisiblePolys
-
-        //Matrix view = GetCameraMatrix(camera);
-        int inc = 0;
-
-        for (int i = 0; i < mesh.triangleCount; i++)
-        {
-            int i0 = i * 3;
-            int i1 = i * 3 + 1;
-            int i2 = i * 3 + 2;
-
-            Vector3 v0 = Vector3Transform(getVertex(mesh, i0), rotation);
-            Vector3 v1 = Vector3Transform(getVertex(mesh, i1), rotation);
-            Vector3 v2 = Vector3Transform(getVertex(mesh, i2), rotation);
-
-            if (cfg.backface_culling)
-                // ← BACKFACE CULLING (world space, avant projection)
-                if (isBackFace(v0, v1, v2, ctx.cameraPos))
-                    continue;
-
-            // ← FRUSTUM CULLING (AABB en world space)
-            Vector3 aabbMin = {
-                fminf(v0.x, fminf(v1.x, v2.x)),
-                fminf(v0.y, fminf(v1.y, v2.y)),
-                fminf(v0.z, fminf(v1.z, v2.z))
-            };
-            Vector3 aabbMax = {
-                fmaxf(v0.x, fmaxf(v1.x, v2.x)),
-                fmaxf(v0.y, fmaxf(v1.y, v2.y)),
-                fmaxf(v0.z, fmaxf(v1.z, v2.z))
-            };
-
-            if (cfg.frustum_culling)
-            {
-                if (!aabbInFrustum(&frustum, aabbMin, aabbMax))
-                    continue;
-
-                // Test précis seulement si l'AABB passe
-                if (!triangleInFrustum(&frustum, v0, v1, v2))
-                    continue;
+                    f*(-duv2x*edge1.x + duv1x*edge2.x),
+                    f*(-duv2x*edge1.y + duv1x*edge2.y),
+                    f*(-duv2x*edge1.z + duv1x*edge2.z)});
             }
 
-            // passer en espace caméra
-            v0 = Vector3Transform(v0, view);
-            v1 = Vector3Transform(v1, view);
-            v2 = Vector3Transform(v2, view);
+            // Normales
+            p->n0 = Vector3Normalize(Vector3Transform(getNormal(mesh, i0, smoothNormals), rotation));
+            p->n1 = Vector3Normalize(Vector3Transform(getNormal(mesh, i1, smoothNormals), rotation));
+            p->n2 = Vector3Normalize(Vector3Transform(getNormal(mesh, i2, smoothNormals), rotation));
 
-            Vector3 e1 = Vector3Subtract(v1, v0);
-            Vector3 e2 = Vector3Subtract(v2, v0);
+            p->tangent   = Vector3Normalize(Vector3Transform(p->tangent,   rotation));
+            p->bitangent = Vector3Normalize(Vector3Transform(p->bitangent, rotation));
 
-            Vector3 normal = Vector3CrossProduct(e1, e2);
-            normal = Vector3Normalize(normal);
+            p->couleur = PolyList[i].couleur;
+            if (!cfg.tiles || (cfg.tiles && !cfg.textures_enabled))
+                flatShading(&ctx, p, view);
 
-            float intensity = Vector3DotProduct(normal, ctx.lightDir);
-            float ambient = 0.2f;
-            intensity = fmaxf(intensity, ambient);
+            p->visible = true;
 
-            if (intensity < 0) intensity = 0;
-#if BACKFACE_CULLING
-            if (normal.z > 0)
-                continue;
-#endif
-            Poly p = PolyList[i];
-
-            // couleur de base (blanc ou autre)
-            //Color base = WHITE;
-            Color base = PolyList[i].couleur;
-            //Color base = {200, 100, 50, 255}; // cuivre / terre cuite
-            p.couleur = base;
-
-            if (!cfg.tiles)
-                p.couleur = (Color){
-                    (unsigned char)(base.r * intensity),
-                    (unsigned char)(base.g * intensity),
-                    (unsigned char)(base.b * intensity),
-                    255
-                };
-
-            // Transformer les normales comme les vertices
-            p.n0 = Vector3Normalize(Vector3Transform(getNormal(mesh, i0, smoothNormals), rotation));
-            p.n1 = Vector3Normalize(Vector3Transform(getNormal(mesh, i1, smoothNormals), rotation));
-            p.n2 = Vector3Normalize(Vector3Transform(getNormal(mesh, i2, smoothNormals), rotation));
-
-            p.v0 = Vector3Transform(getVertex(mesh, i0), rotation);
-            p.v1 = Vector3Transform(getVertex(mesh, i1), rotation);
-            p.v2 = Vector3Transform(getVertex(mesh, i2), rotation);
-
-            p.tangent   = Vector3Normalize(Vector3Transform(p.tangent,   rotation));
-            p.bitangent = Vector3Normalize(Vector3Transform(p.bitangent, rotation));
-
-            visiblePolys[inc++] = p;
-
+            inc++;
         }
+
         int polyCount = inc;
         ctx.polys = visiblePolys;
         ctx.polyCount = polyCount;
@@ -1820,8 +1757,6 @@ int main(void)
     free(threadData);
     free(framebuffer);
     free(smoothNormals);
-    free(projected);
-    free(z);
     free(PolyList);
     free(visiblePolys);
 
