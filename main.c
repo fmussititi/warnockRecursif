@@ -20,12 +20,14 @@ int tilesY;
 atomic_int tilesRemaining;
 // Buffer global
 Color* framebuffer;
+Color* framebufferBlur;
 
 ThreadData* threadData;
 pthread_t* threads;
 pthread_barrier_t barrierStart;  // main attend que les threads soient prêts
 pthread_barrier_t barrierEnd;    // main attend que les threads aient fini
 pthread_barrier_t barrierSkyboxDone;
+pthread_barrier_t barrierBlurPass1;
 
 typedef struct {
     int count;
@@ -1036,33 +1038,67 @@ void* worker(void* arg) {
             }
 
             if (td->ctx->blur) {
-                // ← BLUR SKYBOX (sur les lignes du thread)
-                for (int pass = 0; pass < td->ctx->pass; pass++) {
-                    int radius = td->ctx->radius; // ajuster : 1=léger, 5=fort
-                    for (int y = td->startLine; y < td->endLine; y++) {
-                        int screenY = td->ctx->screenHeight - y;
-                        if (screenY < 0 || screenY >= td->ctx->screenHeight) continue;
+                int radius = td->ctx->radius;
+                int W = td->ctx->screenWidth;
+                int H = td->ctx->screenHeight;
 
-                        for (int x = 0; x < td->ctx->screenWidth; x++) {
-                            int r = 0, g = 0, b = 0, count = 0;
+                // --- PASS 1 : HORIZONTAL (framebuffer -> framebufferBlur) ---
+                for (int y = td->startLine; y < td->endLine; y++) {
+                    if (y < 0 || y >= H) continue;
 
-                            for (int dy = -radius; dy <= radius; dy++) {
-                                for (int dx = -radius; dx <= radius; dx++) {
-                                    int ny = screenY + dy;
-                                    int nx = x + dx;
-                                    if (nx < 0 || nx >= td->ctx->screenWidth) continue;
-                                    if (ny < 0 || ny >= td->ctx->screenHeight) continue;
+                    int screenY = H - y;
+                    if (screenY < 0 || screenY >= H) continue;
 
-                                    Color c = framebuffer[ny * td->ctx->screenWidth + nx];
-                                    r += c.r; g += c.g; b += c.b;
-                                    count++;
-                                }
-                            }
+                    int row = screenY * W;
 
-                            framebuffer[screenY * td->ctx->screenWidth + x] = (Color){
-                                r / count, g / count, b / count, 255
-                            };
+                    for (int x = 0; x < W; x++) {
+                        int sumR = 0, sumG = 0, sumB = 0, count = 0;
+
+                        for (int dx = -radius; dx <= radius; dx++) {
+                            int nx = x + dx;
+                            if (nx < 0 || nx >= W) continue;
+                            Color c = framebuffer[row + nx];
+                            sumR += c.r; sumG += c.g; sumB += c.b;
+                            count++;
                         }
+
+                        framebufferBlur[row + x] = (Color){
+                            sumR / count,
+                            sumG / count,
+                            sumB / count,
+                            255
+                        };
+                    }
+                }
+
+                // Tous les threads ont rempli framebufferBlur
+                pthread_barrier_wait(&barrierBlurPass1);
+
+                // --- PASS 2 : VERTICAL (framebufferBlur -> framebuffer) ---
+                for (int y = td->startLine; y < td->endLine; y++) {
+                    if (y < 0 || y >= H) continue;
+
+                    int screenY = H - y;
+                    if (screenY < 0 || screenY >= H) continue;
+
+                    for (int x = 0; x < W; x++) {
+                        int sumR = 0, sumG = 0, sumB = 0, count = 0;
+
+                        for (int dy = -radius; dy <= radius; dy++) {
+                            int ny = screenY + dy;
+                            if (ny < 0 || ny >= H) continue;
+
+                            Color c = framebufferBlur[ny * W + x];
+                            sumR += c.r; sumG += c.g; sumB += c.b;
+                            count++;
+                        }
+
+                        framebuffer[screenY * W + x] = (Color){
+                            sumR / count,
+                            sumG / count,
+                            sumB / count,
+                            255
+                        };
                     }
                 }
             }
@@ -1140,6 +1176,10 @@ void renderFrame(RenderContext* ctx) {
 
     // Début de frame → réveiller les workers
     pthread_barrier_wait(&barrierStart);
+
+    if (ctx->blur)
+        // Attendre fin blur pass1
+        pthread_barrier_wait(&barrierBlurPass1);
 
     // Attendre fin skybox
     pthread_barrier_wait(&barrierSkyboxDone);
@@ -1292,6 +1332,12 @@ int main(void)
         return 1;
     }
 
+    framebufferBlur = malloc(cfg.screen_width * cfg.screen_height * sizeof(Color));
+    if (!framebufferBlur) {
+        printf("ERREUR: malloc framebufferBlur failed!\n");
+        return 1;
+    }
+
     threadData = malloc(cfg.num_threads * sizeof(ThreadData));
     if (!threadData) {
         printf("ERREUR: malloc threadData failed!\n");
@@ -1422,6 +1468,8 @@ int main(void)
         pthread_barrier_init(&barrierStart,        NULL, cfg.num_threads + 1);
         pthread_barrier_init(&barrierEnd,          NULL, cfg.num_threads + 1);
         pthread_barrier_init(&barrierSkyboxDone,   NULL, cfg.num_threads + 1);
+        if (cfg.blur)
+            pthread_barrier_init(&barrierBlurPass1,    NULL, cfg.num_threads + 1);
 
         initThreads(&ctx);
     }
@@ -1772,12 +1820,12 @@ int main(void)
     free(threads);
     free(threadData);
     free(framebuffer);
+    free(framebufferBlur);
     free(smoothNormals);
     free(PolyList);
     free(visiblePolys);
 
-    if (cfg.zbuffer)
-        free(zbuffer);
+    if (cfg.zbuffer) free(zbuffer);
 
     if (ctx.skyU) free(ctx.skyU);
     if (ctx.skyV) free(ctx.skyV);
