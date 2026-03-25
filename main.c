@@ -119,9 +119,11 @@ Color SampleEquirectangular(RenderContext *ctx, Vector3 dir)
 
     // clamp vertical
     if (y < 0) y = 0;
-    if (y >= ctx->envMap.height) y = ctx->envMap.height - 1; 
-
-    return GetImageColor(ctx->envMap, x, y);
+    if (y >= ctx->envMap.height) y = ctx->envMap.height - 1;
+    
+    Color* pixels = (Color*)ctx->envMap.data;
+    return pixels[y * ctx->envMap.width + x];
+    //return GetImageColor(ctx->envMap, x, y);
 }
 
 Vector3 GetRayDirection(RenderContext *ctx, int px, int py)
@@ -152,9 +154,6 @@ void PrecomputeSkyboxLUT(RenderContext* ctx)
     int W = ctx->screenWidth;
     int H = ctx->screenHeight;
 
-    ctx->skyU = malloc(W * H * sizeof(float));
-    ctx->skyV = malloc(W * H * sizeof(float));
-
     for (int y = 0; y < H; y++) {
         for (int x = 0; x < W; x++) {
 
@@ -183,7 +182,9 @@ static inline Color SampleEquirectangularUV(RenderContext* ctx, float u, float v
     x = (x % ctx->envMap.width + ctx->envMap.width) % ctx->envMap.width;
     y = Clamp(y, 0, ctx->envMap.height - 1);
 
-    return GetImageColor(ctx->envMap, x, y);
+    Color* pixels = (Color*)ctx->envMap.data;
+    return pixels[y * ctx->envMap.width + x];
+    //return GetImageColor(ctx->envMap, x, y);
 }
 
 void flatShading(RenderContext* ctx, Poly* p, Matrix view)
@@ -1371,6 +1372,7 @@ int main(void)
 
     if (cfg.envMap_enable) {
         ctx.envMap = LoadImage(cfg.envMap);
+        ImageFormat(&ctx.envMap, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);  // ← forcer RGBA
     } else {
         ctx.envMap.data   = NULL;
         ctx.envMap.width  = 0;
@@ -1389,6 +1391,9 @@ int main(void)
         ctx.texImage.data = NULL;
         ctx.normalMap.data = NULL;
     }
+
+    ctx.skyU = malloc(cfg.screen_width * cfg.screen_height * sizeof(float));
+    ctx.skyV = malloc(cfg.screen_width * cfg.screen_height * sizeof(float));
 
     // Tableau de normales par sommet
     Vector3* smoothNormals = calloc(vertexCount, sizeof(Vector3));
