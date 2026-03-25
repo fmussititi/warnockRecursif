@@ -695,14 +695,29 @@ void drawTile(RenderContext* ctx, int tx, int ty)
     int x0 = tx * ctx->tile_size;
     int y0 = ty * ctx->tile_size;
     int x1 = x0 + ctx->tile_size;
-    int yEnd = y0 + ctx->tile_size; // ← renommer y1 en yEnd
+    int yEnd = y0 + ctx->tile_size;
 
     Tile* tile = &tiles[ty * tilesX + tx];
 
+    if (tile->count == 0) return;
+
     float zbuf[ctx->tile_size * ctx->tile_size];
-    //float* zbuf = malloc(ctx->tile_size * ctx->tile_size * sizeof(float));
     for (int i = 0; i < ctx->tile_size * ctx->tile_size; i++)
         zbuf[i] = 1e9f;
+
+    // ← Précalcul des flags et pointeurs, une seule fois pour toute la tile
+    const bool hasTexture   = ctx->texImage.data   != NULL;
+    const bool hasNormalMap = ctx->normalMap.data  != NULL;
+    const bool hasEnvMap    = ctx->envMap.data     != NULL;
+
+    const Color* texPixels    = hasTexture   ? (Color*)ctx->texImage.data   : NULL;
+    const Color* normalPixels = hasNormalMap ? (Color*)ctx->normalMap.data  : NULL;
+    const int texW    = ctx->texImage.width;
+    const int texH    = ctx->texImage.height;
+    const int normW   = ctx->normalMap.width;
+    const int normH   = ctx->normalMap.height;
+    const int envW    = ctx->envMap.width;
+    const int envH    = ctx->envMap.height;
 
     for (int t = 0; t < tile->count; t++)
     {
@@ -730,44 +745,28 @@ void drawTile(RenderContext* ctx, int tx, int ty)
         float w1_row = evalEdge(e1, startX, startY);
         float w2_row = evalEdge(e2, startX, startY);
 
-        // Précalcul des incréments pour 8 pixels
-        // offsets[k] = k * e.A  pour k = 0..7
-        __m256 e0A_8 = _mm256_set1_ps(e0.A * 8); // incrément de 8 pixels
+        __m256 e0A_8 = _mm256_set1_ps(e0.A * 8);
         __m256 e1A_8 = _mm256_set1_ps(e1.A * 8);
         __m256 e2A_8 = _mm256_set1_ps(e2.A * 8);
-
-        __m256 offsets = _mm256_set_ps(7,6,5,4,3,2,1,0); // 0,1,2,3,4,5,6,7
+        __m256 offsets = _mm256_set_ps(7,6,5,4,3,2,1,0);
         __m256 zero    = _mm256_setzero_ps();
 
         for (int y = minY; y <= maxY; y++)
         {
-            // Initialiser w0,w1,w2 pour les 8 premiers pixels de cette ligne
-            __m256 w0_v = _mm256_add_ps(
-                _mm256_set1_ps(w0_row),
-                _mm256_mul_ps(offsets, _mm256_set1_ps(e0.A))
-            );
-            __m256 w1_v = _mm256_add_ps(
-                _mm256_set1_ps(w1_row),
-                _mm256_mul_ps(offsets, _mm256_set1_ps(e1.A))
-            );
-            __m256 w2_v = _mm256_add_ps(
-                _mm256_set1_ps(w2_row),
-                _mm256_mul_ps(offsets, _mm256_set1_ps(e2.A))
-            );
+            __m256 w0_v = _mm256_add_ps(_mm256_set1_ps(w0_row), _mm256_mul_ps(offsets, _mm256_set1_ps(e0.A)));
+            __m256 w1_v = _mm256_add_ps(_mm256_set1_ps(w1_row), _mm256_mul_ps(offsets, _mm256_set1_ps(e1.A)));
+            __m256 w2_v = _mm256_add_ps(_mm256_set1_ps(w2_row), _mm256_mul_ps(offsets, _mm256_set1_ps(e2.A)));
 
             for (int x = minX; x <= maxX; x += 8)
             {
-                // Test : les 8 pixels sont-ils dans le triangle ?
                 __m256 m0 = _mm256_cmp_ps(w0_v, zero, _CMP_GE_OS);
                 __m256 m1 = _mm256_cmp_ps(w1_v, zero, _CMP_GE_OS);
                 __m256 m2 = _mm256_cmp_ps(w2_v, zero, _CMP_GE_OS);
                 __m256 mask = _mm256_and_ps(_mm256_and_ps(m0, m1), m2);
-
                 int imask = _mm256_movemask_ps(mask);
 
-                if (imask != 0) // au moins 1 pixel valide
+                if (imask != 0)
                 {
-                    // Extraire les valeurs scalaires pour chaque pixel valide
                     float w0_arr[8], w1_arr[8], w2_arr[8];
                     _mm256_storeu_ps(w0_arr, w0_v);
                     _mm256_storeu_ps(w1_arr, w1_v);
@@ -813,20 +812,18 @@ void drawTile(RenderContext* ctx, int tx, int ty)
                             float u = alpha * tri->uv0.x + beta * tri->uv1.x + gamma * tri->uv2.x;
                             float v = alpha * tri->uv0.y + beta * tri->uv1.y + gamma * tri->uv2.y;
 
-                            // Normal map
-                            if (ctx->normalMap.data != NULL) {
-                                int nx = (int)(u * ctx->normalMap.width)  % ctx->normalMap.width;
-                                int ny = (int)(v * ctx->normalMap.height) % ctx->normalMap.height;
-                                if (nx < 0) nx += ctx->normalMap.width;
-                                if (ny < 0) ny += ctx->normalMap.height;
-
-                                Color nc = GetImageColor(ctx->normalMap, nx, ny);
+                            // ← Normal map : pas de branche dans la boucle
+                            if (hasNormalMap) {
+                                int nx = (int)(u * normW) % normW;
+                                int ny = (int)(v * normH) % normH;
+                                if (nx < 0) nx += normW;
+                                if (ny < 0) ny += normH;
+                                Color nc = normalPixels[ny * normW + nx];
                                 Vector3 nMap = {
                                     (nc.r / 255.0f) * 2.0f - 1.0f,
                                     (nc.g / 255.0f) * 2.0f - 1.0f,
                                     (nc.b / 255.0f) * 2.0f - 1.0f
                                 };
-
                                 Vector3 T = tri->tangent;
                                 Vector3 B = tri->bitangent;
                                 Vector3 N = n;
@@ -837,66 +834,39 @@ void drawTile(RenderContext* ctx, int tx, int ty)
                                 });
                             }
 
-                            // Texture
+                            // ← Texture : pas de branche dans la boucle
                             Color base;
-                            if (ctx->texImage.data == NULL) {
-                                base = tri->couleur;
+                            if (hasTexture) {
+                                int texX = (int)(u * texW) % texW;
+                                int texY = (int)(v * texH) % texH;
+                                if (texX < 0) texX += texW;
+                                if (texY < 0) texY += texH;
+                                base = texPixels[texY * texW + texX];
                             } else {
-                                int texX = (int)(u * ctx->texImage.width)  % ctx->texImage.width;
-                                int texY = (int)(v * ctx->texImage.height) % ctx->texImage.height;
-                                if (texX < 0) texX += ctx->texImage.width;
-                                if (texY < 0) texY += ctx->texImage.height;
-                                base = GetImageColor(ctx->texImage, texX, texY);
+                                base = tri->couleur;
                             }
 
-#pragma region Lighting
-                            // vecteur vue (TOUJOURS défini)
+                            // Lighting
                             Vector3 viewDir = Vector3Normalize(Vector3Subtract(ctx->cameraPos, pixelPos));
 
-                            // =======================
-                            // ENVIRONMENT MAPPING (stylé chrome)
-                            // =======================                            
-                            //Color envColor = SampleEquirectangular(ctx, viewDir);
+                            // ← EnvMap : pas de branche dans la boucle
                             Color envColor = base;
-
-                            if (ctx->envMap.data != NULL)
-                            {
-                                // réflexion
+                            if (hasEnvMap) {
                                 Vector3 I = Vector3Negate(viewDir);
                                 Vector3 R = Vector3Subtract(I, Vector3Scale(n, 2.0f * Vector3DotProduct(I, n)));
                                 R = Vector3Normalize(R);
-
-                                // mapping sphérique
-                                float u_env = 0.5f + atan2f(R.z, R.x) / (2.0f * PI);
-                                float v_env = 0.5f - asinf(R.y) / PI;
-
-                                int envX = (int)(u_env * ctx->envMap.width)  % ctx->envMap.width;
-                                int envY = (int)(v_env * ctx->envMap.height) % ctx->envMap.height;
-
-                                if (envX < 0) envX += ctx->envMap.width;
-                                if (envY < 0) envY += ctx->envMap.height;
-
-                                //envColor = GetImageColor(ctx->envMap, envX, envY);
                                 envColor = SampleEquirectangular(ctx, R);
-
-                                // effet stylé : boost couleurs + contraste
                                 envColor.r = (unsigned char)fminf(envColor.r * 1.3f + 20, 255);
                                 envColor.g = (unsigned char)fminf(envColor.g * 1.3f + 20, 255);
                                 envColor.b = (unsigned char)fminf(envColor.b * 1.3f + 20, 255);
                             }
 
-                            // =======================
-                            //  MIX CHROME / COLOR
-                            // =======================
                             float fresnel = powf(1.0f - fmaxf(Vector3DotProduct(n, viewDir), 0.0f), 5.0f);
-
-                            float dotNL = fmaxf(Vector3DotProduct(n, ctx->lightDir), 0.0f); // ← clamp ici
-
+                            float dotNL   = fmaxf(Vector3DotProduct(n, ctx->lightDir), 0.0f);
                             float diffuse = dotNL;
                             Vector3 halfDir = Vector3Normalize(Vector3Add(ctx->lightDir, viewDir));
                             float dotNH = fmaxf(Vector3DotProduct(n, halfDir), 0.0f);
-                            float spec = (dotNL > 0.0f) ? powf(dotNH, ctx->shininess) : 0.0f;
-
+                            float spec  = (dotNL > 0.0f) ? powf(dotNH, ctx->shininess) : 0.0f;
                             float lighting = fminf(ctx->ambient + diffuse * ctx->diffuse, 1.0f);
 
                             Color litBase = {
@@ -906,9 +876,9 @@ void drawTile(RenderContext* ctx, int tx, int ty)
                                 255
                             };
 
+                            // ← Mix envMap : pas de branche dans la boucle
                             Color final;
-                            if (ctx->envMap.data != NULL) {
-                                //float reflectivity = 0.8f + 0.2f * fresnel;
+                            if (hasEnvMap) {
                                 float reflectivity = ctx->refl1 + ctx->refl2 * fresnel;
                                 final = (Color){
                                     (unsigned char)(litBase.r * (1.0f - reflectivity) + envColor.r * reflectivity),
@@ -924,28 +894,24 @@ void drawTile(RenderContext* ctx, int tx, int ty)
                             final.r = (unsigned char)fminf(final.r + 255 * specIntensity, 255);
                             final.g = (unsigned char)fminf(final.g + 255 * specIntensity, 255);
                             final.b = (unsigned char)fminf(final.b + 255 * specIntensity, 255);
-#pragma endregion
 
                             int fbY = ctx->screenHeight - y;
                             if (fbY >= 0 && fbY < ctx->screenHeight)
-                                framebuffer[fbY * ctx->screenWidth + px] = final;                                
+                                framebuffer[fbY * ctx->screenWidth + px] = final;
                         }
                     }
                 }
 
-                // Incrémenter w de 8 pixels
                 w0_v = _mm256_add_ps(w0_v, e0A_8);
                 w1_v = _mm256_add_ps(w1_v, e1A_8);
                 w2_v = _mm256_add_ps(w2_v, e2A_8);
             }
 
-            // Incrément Y
             w0_row += e0.B;
             w1_row += e1.B;
             w2_row += e2.B;
         }
     }
-    //free(zbuf);
 }
 
 static Color colorFromIndex(int i)
@@ -1373,7 +1339,10 @@ int main(void)
 
     if (cfg.textures_enabled) {
         ctx.texImage  = LoadImage(cfg.tex_diffuse);
+        ImageFormat(&ctx.texImage, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);  // ← forcer RGBA
+
         ctx.normalMap = LoadImage(cfg.tex_normal);
+        ImageFormat(&ctx.normalMap, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);
     }
     else
     {
