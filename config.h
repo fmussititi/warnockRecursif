@@ -42,8 +42,7 @@ typedef struct {
     // SkyBox
     int blur;
     int radius;
-    int pass;
-
+   
     // DepthOfField
     int dof;
     float focalDistance, focalRange;
@@ -89,7 +88,6 @@ Config loadConfig(const char* filename)
         .envMap         = "./ressources/bell_tower.jpg",
         .blur           = 0,
         .radius         = 5,
-        .pass           = 3,
         .dof            = 1,
         .focalDistance  = 5.0f,
         .focalRange     = 3.0f,
@@ -160,7 +158,6 @@ Config loadConfig(const char* filename)
         else if (!strcmp(k, "envMap"))            strncpy(cfg.envMap,      v, 255);
         else if (!strcmp(k, "blur"))              cfg.blur              = atoi(v);
         else if (!strcmp(k, "radius"))            cfg.radius            = atoi(v);
-        else if (!strcmp(k, "pass"))              cfg.pass              = atoi(v);
         else if (!strcmp(k, "dof"))               cfg.dof               = atoi(v);
         else if (!strcmp(k, "focalDistance"))     cfg.focalDistance     = atof(v);
         else if (!strcmp(k, "focalRange"))        cfg.focalRange        = atof(v);

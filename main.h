@@ -66,6 +66,7 @@ typedef struct {
 
     int num_threads;
     int tile_size;
+    int max_tri_per_tile;
 
     int screenWidth;
     int screenHeight;

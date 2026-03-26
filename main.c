@@ -1047,7 +1047,7 @@ void* worker(void* arg) {
                 }
             }
 
-            if (td->ctx->blur) {
+            if (td->ctx->blur && td->ctx->envMap.data) {
                 int radius = td->ctx->radius;
                 int W = td->ctx->screenWidth;
                 int H = td->ctx->screenHeight;
@@ -1274,7 +1274,7 @@ void renderFrame(RenderContext* ctx) {
 
     pthread_barrier_wait(&barrierStart);
 
-    if (ctx->blur)
+    if (ctx->blur && ctx->envMap.data)
         // Attendre fin blur pass1
         pthread_barrier_wait(&barrierBlurPass1);
 
@@ -1517,10 +1517,10 @@ int main(void)
     ctx.fov = cfg.fov;
     ctx.num_threads = cfg.num_threads;
     ctx.tile_size = cfg.tile_size;
+    ctx.max_tri_per_tile = cfg.max_tri_per_tile;
     ctx.envMap_enable = cfg.envMap_enable;
     ctx.blur = cfg.blur;
     ctx.radius = cfg.radius;
-    ctx.pass = cfg.pass;
     ctx.dof = cfg.dof;
     ctx.maxBlurRadius = cfg.maxBlurRadius;
     ctx.focalDistance = cfg.focalDistance;
