@@ -283,13 +283,17 @@ void* worker(void* arg)
             }
         }
 
-        // 2. RESET DEPTH BUFFER (Seulement si DoF actif)
-        // On initialise à l'infini pour que la Skybox soit traitée par le DoF
-        if (td->ctx->dof && td->startLine == 0) {
-            for (int i = 0; i < W * H; i++) depthBuffer[i] = 1e9f;
+        // 2. RESET DEPTH BUFFER (tous les threads, chacun sa plage de lignes)
+        if (td->ctx->dof) {
+            for (int y = td->startLine; y < td->endLine; y++) {
+                int row = y * W;
+                for (int x = 0; x < W; x++)
+                    depthBuffer[row + x] = 1e9f;
+            }
         }
 
-        if (td->ctx->envMap.data) pthread_barrier_wait(&barrierSkyboxDone);
+        // Toujours attendre, skybox ou pas
+        pthread_barrier_wait(&barrierSkyboxDone);
 
         // 3. PHASE TRIANGLES (Dessin par-dessus la skybox)
         for (int t = td->startTile; t < td->endTile; t++) {
@@ -386,8 +390,7 @@ void renderFrame(RenderContext* ctx)
 
     pthread_barrier_wait(&barrierStart);
 
-    if (ctx->envMap.data)
-        pthread_barrier_wait(&barrierSkyboxDone);
+    pthread_barrier_wait(&barrierSkyboxDone);
 
     pthread_barrier_wait(&barrierTilesDone);
 
