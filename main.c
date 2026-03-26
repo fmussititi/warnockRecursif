@@ -104,8 +104,6 @@ int main(void)
     ctx.max_tri_per_tile = cfg.max_tri_per_tile;
     ctx.max_tiles     = cfg.max_tiles;
     ctx.envMap_enable = cfg.envMap_enable;
-    ctx.blur          = cfg.blur;
-    ctx.radius        = cfg.radius;
     ctx.dof           = cfg.dof;
     ctx.maxBlurRadius = cfg.maxBlurRadius;
     ctx.focalDistance = cfg.focalDistance;

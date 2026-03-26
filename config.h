@@ -38,11 +38,7 @@ typedef struct {
     // EnvironementMap
     int envMap_enable;
     char envMap[256];
-
-    // SkyBox
-    int blur;
-    int radius;
-   
+  
     // DepthOfField
     int dof;
     float focalDistance, focalRange;

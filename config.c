@@ -25,8 +25,6 @@ Config loadConfig(const char* filename)
         .tex_normal     = "./ressources/rusty_metal_02_nor_gl_1k.jpg",
         .envMap_enable  = 1,
         .envMap         = "./ressources/bell_tower.jpg",
-        .blur           = 0,
-        .radius         = 5,
         .dof            = 1,
         .focalDistance  = 5.0f,
         .focalRange     = 3.0f,
@@ -96,8 +94,6 @@ Config loadConfig(const char* filename)
         else if (!strcmp(k, "normal_tex"))        strncpy(cfg.tex_normal,  v, 255);
         else if (!strcmp(k, "enableEnvMap"))      cfg.envMap_enable     = atoi(v);
         else if (!strcmp(k, "envMap"))            strncpy(cfg.envMap,      v, 255);
-        else if (!strcmp(k, "blur"))              cfg.blur              = atoi(v);
-        else if (!strcmp(k, "radius"))            cfg.radius            = atoi(v);
         else if (!strcmp(k, "dof"))               cfg.dof               = atoi(v);
         else if (!strcmp(k, "focalDistance"))     cfg.focalDistance     = atof(v);
         else if (!strcmp(k, "focalRange"))        cfg.focalRange        = atof(v);

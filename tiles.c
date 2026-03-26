@@ -247,155 +247,116 @@ void drawTile(RenderContext* ctx, int tx, int ty)
 void* worker(void* arg)
 {
     ThreadData* td = (ThreadData*)arg;
+    int W = td->ctx->screenWidth;
+    int H = td->ctx->screenHeight;
 
     while (true) {
-
         pthread_barrier_wait(&barrierStart);
 
-        // Phase SKYBOX
+        // 1. PHASE SKYBOX (Remplissage initial)
         if (td->ctx->skyU && td->ctx->skyV && td->ctx->envMap.data) {
             for (int y = td->startLine; y < td->endLine; y++) {
-                if (y < 0 || y >= td->ctx->screenHeight) continue;
-                int screenY = td->ctx->screenHeight - y;
-                if (screenY < 0 || screenY >= td->ctx->screenHeight) continue;
-                int base   = screenY * td->ctx->screenWidth;
-                int lutRow = y      * td->ctx->screenWidth;
-                for (int x = 0; x < td->ctx->screenWidth; x++) {
-                    int idx = lutRow + x;
-                    framebuffer[base + x] = SampleEquirectangularUV(td->ctx,
-                        td->ctx->skyU[idx], td->ctx->skyV[idx]);
+                if (y < 0 || y >= H) continue;
+                int screenY = H - 1 - y; // Correction de l'inversion Y si nécessaire
+                int base = screenY * W;
+                int lutRow = y * W;
+                for (int x = 0; x < W; x++) {
+                    framebuffer[base + x] = SampleEquirectangularUV(td->ctx, 
+                        td->ctx->skyU[lutRow + x], td->ctx->skyV[lutRow + x]);
                 }
             }
-
-            if (td->ctx->blur && td->ctx->envMap.data) {
-                int radius = td->ctx->radius;
-                int W = td->ctx->screenWidth;
-                int H = td->ctx->screenHeight;
-
-                // Pass 1 : horizontal
-                for (int y = td->startLine; y < td->endLine; y++) {
-                    if (y < 0 || y >= H) continue;
-                    int screenY = H - y;
-                    if (screenY < 0 || screenY >= H) continue;
-                    int row = screenY * W;
-                    for (int x = 0; x < W; x++) {
-                        int sumR = 0, sumG = 0, sumB = 0, count = 0;
-                        for (int dx = -radius; dx <= radius; dx++) {
-                            int nx = x + dx;
-                            if (nx < 0 || nx >= W) continue;
-                            Color c = framebuffer[row + nx];
-                            sumR += c.r; sumG += c.g; sumB += c.b; count++;
-                        }
-                        framebufferBlur[row + x] = (Color){ sumR/count, sumG/count, sumB/count, 255 };
-                    }
-                }
-                pthread_barrier_wait(&barrierBlurPass1);
-
-                // Pass 2 : vertical
-                for (int y = td->startLine; y < td->endLine; y++) {
-                    if (y < 0 || y >= H) continue;
-                    int screenY = H - y;
-                    if (screenY < 0 || screenY >= H) continue;
-                    for (int x = 0; x < W; x++) {
-                        int sumR = 0, sumG = 0, sumB = 0, count = 0;
-                        for (int dy = -radius; dy <= radius; dy++) {
-                            int ny = screenY + dy;
-                            if (ny < 0 || ny >= H) continue;
-                            Color c = framebufferBlur[ny * W + x];
-                            sumR += c.r; sumG += c.g; sumB += c.b; count++;
-                        }
-                        framebuffer[screenY * W + x] = (Color){ sumR/count, sumG/count, sumB/count, 255 };
-                    }
+        }else {
+            // Cas sans Skybox : On remplit avec une couleur par défaut (ex: noir ou bleu nuit)
+            // Couleur personnalisée
+            Color clearColor = (Color){ 20, 20, 30, 255 };
+            
+            for (int y = td->startLine; y < td->endLine; y++) {
+                if (y < 0 || y >= H) continue;
+                int screenY = H - 1 - y;
+                Color* rowPtr = &framebuffer[screenY * W];
+                
+                // Cette boucle est généralement "vectorisée" par le compilateur
+                // ce qui la rend presque aussi rapide qu'un memset
+                for (int x = 0; x < W; x++) {
+                    rowPtr[x] = clearColor;
                 }
             }
         }
 
-        // Reset depthBuffer (thread 0 seulement)
+        // 2. RESET DEPTH BUFFER (Seulement si DoF actif)
+        // On initialise à l'infini pour que la Skybox soit traitée par le DoF
         if (td->ctx->dof && td->startLine == 0) {
-            int total = td->ctx->screenWidth * td->ctx->screenHeight;
-            for (int i = 0; i < total; i++)
-                depthBuffer[i] = 1e9f;
+            for (int i = 0; i < W * H; i++) depthBuffer[i] = 1e9f;
         }
 
-        pthread_barrier_wait(&barrierSkyboxDone);
+        if (td->ctx->envMap.data) pthread_barrier_wait(&barrierSkyboxDone);
 
-        // Phase TRIANGLES
+        // 3. PHASE TRIANGLES (Dessin par-dessus la skybox)
         for (int t = td->startTile; t < td->endTile; t++) {
             int tx = t % tilesX;
             int ty = t / tilesX;
 
-            if (!td->ctx->skyU || !td->ctx->skyV || !td->ctx->envMap.data) {
-                for (int row = 0; row < td->ctx->tile_size; row++) {
-                    int y       = ty * td->ctx->tile_size + row;
-                    int screenY = td->ctx->screenHeight - y;
-                    if (screenY < 0 || screenY >= td->ctx->screenHeight) continue;
-                    memset(&framebuffer[screenY * td->ctx->screenWidth + tx * td->ctx->tile_size],
-                           0, td->ctx->tile_size * sizeof(Color));
-                }
-            }
-            drawTile(td->ctx, tx, ty);
+            drawTile(td->ctx, tx, ty); // Remplit framebuffer ET depthBuffer
         }
 
-        // Phase DOF
-        if (td->ctx->dof) {
-            pthread_barrier_wait(&barrierTilesDone);
+        pthread_barrier_wait(&barrierTilesDone);
 
-            int W    = td->ctx->screenWidth;
-            int H    = td->ctx->screenHeight;
+        // 4. PHASE DOF (Appliquée à TOUT l'écran : Objets + Skybox)
+        if (td->ctx->dof) {
             int maxR = td->ctx->maxBlurRadius;
 
-            // Pass 1 : horizontal
-            for (int screenY = td->startLine; screenY < td->endLine; screenY++) {
-                if (screenY < 0 || screenY >= H) continue;
-                int row = screenY * W;
+            // PASS 1 : Horizontal (framebuffer -> framebufferBlur)
+            for (int y = td->startLine; y < td->endLine; y++) {
+                int row = y * W;
                 for (int x = 0; x < W; x++) {
                     float depth = depthBuffer[row + x];
-                    if (!isfinite(depth) || depth > 1e8f) {
+                    // Calcul du CoC : si depth est 1e9, coc sera max (1.0)
+                    float coc = fabsf(depth - td->ctx->focalDistance) / td->ctx->focalRange;
+                    int radius = (int)(fminf(coc, 1.0f) * maxR);
+
+                    if (radius <= 0) {
                         framebufferBlur[row + x] = framebuffer[row + x];
                         continue;
                     }
-                    float coc    = fabsf(depth - td->ctx->focalDistance) / td->ctx->focalRange;
-                    int   radius = (int)(fminf(coc, 1.0f) * maxR);
-                    if (radius == 0) { framebufferBlur[row + x] = framebuffer[row + x]; continue; }
 
-                    int sumR = 0, sumG = 0, sumB = 0, count = 0;
+                    int r=0, g=0, b=0, count=0;
                     for (int dx = -radius; dx <= radius; dx++) {
                         int nx = x + dx;
-                        if (nx < 0 || nx >= W) continue;
-                        Color c = framebuffer[row + nx];
-                        sumR += c.r; sumG += c.g; sumB += c.b; count++;
+                        if (nx >= 0 && nx < W) {
+                            Color c = framebuffer[row + nx];
+                            r += c.r; g += c.g; b += c.b; count++;
+                        }
                     }
-                    framebufferBlur[row + x] = (Color){ sumR/count, sumG/count, sumB/count, 255 };
+                    framebufferBlur[row + x] = (Color){ r/count, g/count, b/count, 255 };
                 }
             }
 
             pthread_barrier_wait(&barrierDoFPass1);
 
-            // Pass 2 : vertical
-            for (int screenY = td->startLine; screenY < td->endLine; screenY++) {
-                if (screenY < 0 || screenY >= H) continue;
+            // PASS 2 : Vertical (framebufferBlur -> framebuffer)
+            for (int y = td->startLine; y < td->endLine; y++) {
                 for (int x = 0; x < W; x++) {
-                    float depth = depthBuffer[screenY * W + x];
-                    if (!isfinite(depth) || depth > 1e8f) continue;
-                    float coc    = fabsf(depth - td->ctx->focalDistance) / td->ctx->focalRange;
-                    int   radius = (int)(fminf(coc, 1.0f) * maxR);
-                    if (radius == 0) continue;
+                    float depth = depthBuffer[y * W + x];
+                    float coc = fabsf(depth - td->ctx->focalDistance) / td->ctx->focalRange;
+                    int radius = (int)(fminf(coc, 1.0f) * maxR);
 
-                    int sumR = 0, sumG = 0, sumB = 0, count = 0;
+                    if (radius <= 0) continue;
+
+                    int r=0, g=0, b=0, count=0;
                     for (int dy = -radius; dy <= radius; dy++) {
-                        int ny = screenY + dy;
-                        if (ny < 0 || ny >= H) continue;
-                        Color c = framebufferBlur[ny * W + x];
-                        sumR += c.r; sumG += c.g; sumB += c.b; count++;
+                        int ny = y + dy;
+                        if (ny >= 0 && ny < H) {
+                            Color c = framebufferBlur[ny * W + x];
+                            r += c.r; g += c.g; b += c.b; count++;
+                        }
                     }
-                    framebuffer[screenY * W + x] = (Color){ sumR/count, sumG/count, sumB/count, 255 };
+                    framebuffer[y * W + x] = (Color){ r/count, g/count, b/count, 255 };
                 }
             }
         }
 
         pthread_barrier_wait(&barrierEnd);
     }
-
     return NULL;
 }
 
@@ -425,13 +386,12 @@ void renderFrame(RenderContext* ctx)
 
     pthread_barrier_wait(&barrierStart);
 
-    if (ctx->blur && ctx->envMap.data)
-        pthread_barrier_wait(&barrierBlurPass1);
+    if (ctx->envMap.data)
+        pthread_barrier_wait(&barrierSkyboxDone);
 
-    pthread_barrier_wait(&barrierSkyboxDone);
+    pthread_barrier_wait(&barrierTilesDone);
 
     if (ctx->dof) {
-        pthread_barrier_wait(&barrierTilesDone);
         pthread_barrier_wait(&barrierDoFPass1);
     }
 

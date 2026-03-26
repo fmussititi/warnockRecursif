@@ -59,9 +59,6 @@ typedef struct {
     Image normalMap;    // normal map
     Image envMap;
     int envMap_enable;
-    int blur;
-    int radius;
-    int pass;
     int dof;
     float focalDistance;  // ex: 5.0f  — profondeur au point net
     float focalRange;     // ex: 3.0f  — zone nette (±)
