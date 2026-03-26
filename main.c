@@ -21,6 +21,7 @@ atomic_int tilesRemaining;
 // Buffer global
 Color* framebuffer;
 Color* framebufferBlur;
+float* depthBuffer;
 
 ThreadData* threadData;
 pthread_t* threads;
@@ -28,6 +29,8 @@ pthread_barrier_t barrierStart;  // main attend que les threads soient prêts
 pthread_barrier_t barrierEnd;    // main attend que les threads aient fini
 pthread_barrier_t barrierSkyboxDone;
 pthread_barrier_t barrierBlurPass1;
+pthread_barrier_t barrierDoFPass1;
+pthread_barrier_t barrierTilesDone;
 
 typedef struct {
     int count;
@@ -743,10 +746,10 @@ void drawTile(RenderContext* ctx, int tx, int ty)
     Tile* tile = &tiles[ty * tilesX + tx];
 
     if (tile->count == 0) return;
-
+  
     float zbuf[ctx->tile_size * ctx->tile_size];
     for (int i = 0; i < ctx->tile_size * ctx->tile_size; i++)
-        zbuf[i] = 1e9f;
+        zbuf[i] = 1e9f; 
 
     // ← Précalcul des flags et pointeurs, une seule fois pour toute la tile
     const bool hasTexture   = ctx->texImage.data   != NULL;
@@ -830,6 +833,10 @@ void drawTile(RenderContext* ctx, int tx, int ty)
                         int lx = px - x0;
                         int ly = y  - y0;
                         int index = ly * ctx->tile_size + lx;
+
+                        // Juste après le calcul de z, prendre la valeur de z pour focalDistance
+                        //if (z < 1e8f && z > -1e8f)
+                        //    printf("z sample = %.2f\n", z);
 
                         if (z < zbuf[index])
                         {
@@ -939,8 +946,11 @@ void drawTile(RenderContext* ctx, int tx, int ty)
                             final.b = (unsigned char)fminf(final.b + 255 * specIntensity, 255);
 
                             int fbY = ctx->screenHeight - y;
-                            if (fbY >= 0 && fbY < ctx->screenHeight)
+
+                            if (fbY >= 0 && fbY < ctx->screenHeight){
                                 framebuffer[fbY * ctx->screenWidth + px] = final;
+                                depthBuffer[fbY * ctx->screenWidth + px] = z;
+                            }
                         }
                     }
                 }
@@ -1103,7 +1113,16 @@ void* worker(void* arg) {
                 }
             }
         }
-
+        
+        if (td->ctx->dof) {
+            // Reset depthBuffer une fois par frame (thread 0 seulement)
+            if (td->startLine == 0) {
+                int total = td->ctx->screenWidth * td->ctx->screenHeight;
+                for (int i = 0; i < total; i++)
+                    depthBuffer[i] = 1e9f;
+            }
+        }
+  
         // 3) Attendre que tous les threads aient fini la skybox
         pthread_barrier_wait(&barrierSkyboxDone);
 
@@ -1129,6 +1148,85 @@ void* worker(void* arg) {
 
             // IMPORTANT : ne plus effacer la tile ici
             drawTile(td->ctx, tx, ty);
+        }
+
+
+        // 5) Phase DOF (optionnelle)
+        if (td->ctx->dof) { 
+            pthread_barrier_wait(&barrierTilesDone);
+
+            int W = td->ctx->screenWidth;
+            int H = td->ctx->screenHeight;
+            int maxR = td->ctx->maxBlurRadius;
+
+            // PASS 1 : horizontal (framebuffer -> framebufferBlur)
+            for (int screenY = td->startLine; screenY < td->endLine; screenY++) {
+                if (screenY < 0 || screenY >= H) continue;
+              
+                int row = screenY * W;
+
+                for (int x = 0; x < W; x++) {
+                    float depth = depthBuffer[row + x];
+                    if (!isfinite(depth) || depth > 1e8f) depth = 1e9f;
+                    // Pixels non touchés (skybox) → pas de DoF
+                    if (depth > 1e8f) {
+                        framebufferBlur[row + x] = framebuffer[row + x];
+                        continue;
+                    }
+
+                    float coc = fabsf(depth - td->ctx->focalDistance) / td->ctx->focalRange;
+                    float cocClamped = fminf(coc, 1.0f);  // clamp entre 0 et 1
+                    int radius = (int)(cocClamped * maxR);
+
+                    if (radius == 0) {
+                        framebufferBlur[row + x] = framebuffer[row + x];
+                        continue;
+                    }
+
+                    int sumR = 0, sumG = 0, sumB = 0, count = 0;
+                    for (int dx = -radius; dx <= radius; dx++) {
+                        int nx = x + dx;
+                        if (nx < 0 || nx >= W) continue;
+                        Color c = framebuffer[row + nx];
+                        sumR += c.r; sumG += c.g; sumB += c.b;
+                        count++;
+                    }
+                    framebufferBlur[row + x] = (Color){
+                        sumR/count, sumG/count, sumB/count, 255
+                    };
+                }
+            }
+
+            pthread_barrier_wait(&barrierDoFPass1);
+
+            // PASS 2 : vertical (framebufferBlur -> framebuffer)
+            for (int screenY = td->startLine; screenY < td->endLine; screenY++) {
+                if (screenY < 0 || screenY >= H) continue;
+
+                for (int x = 0; x < W; x++) {
+                    float depth = depthBuffer[screenY * W + x];
+
+                    if (!isfinite(depth) || depth > 1e8f) continue;  // skybox → skip
+
+                    float coc = fabsf(depth - td->ctx->focalDistance) / td->ctx->focalRange;
+                    float cocClamped = fminf(coc, 1.0f);
+                    int radius = (int)(cocClamped * maxR);
+
+                    if (radius == 0) continue;
+
+                    int sumR = 0, sumG = 0, sumB = 0, count = 0;
+                    for (int dy = -radius; dy <= radius; dy++) {
+                        int ny = screenY + dy;
+                        if (ny < 0 || ny >= H) continue;
+                        Color c = framebufferBlur[ny * W + x];
+                        sumR += c.r; sumG += c.g; sumB += c.b;
+                        count++;
+                    }
+                    framebuffer[screenY * W + x] = (Color){
+                        sumR/count, sumG/count, sumB/count, 255
+                    };
+                }
+            }
         }
 
         // 5) Fin de frame
@@ -1174,17 +1272,19 @@ void renderFrame(RenderContext* ctx) {
     for (int i = 0; i < ctx->num_threads; i++)
         threadData[i].ctx = ctx;
 
-    // Début de frame → réveiller les workers
     pthread_barrier_wait(&barrierStart);
 
     if (ctx->blur)
         // Attendre fin blur pass1
         pthread_barrier_wait(&barrierBlurPass1);
 
-    // Attendre fin skybox
     pthread_barrier_wait(&barrierSkyboxDone);
+    
+    if (ctx->dof) {
+        pthread_barrier_wait(&barrierTilesDone);
+        pthread_barrier_wait(&barrierDoFPass1);
+    }
 
-    // Attendre fin triangles
     pthread_barrier_wait(&barrierEnd);
 }
 #pragma endregion
@@ -1338,6 +1438,13 @@ int main(void)
         return 1;
     }
 
+    depthBuffer = malloc(cfg.screen_width * cfg.screen_height * sizeof(float));
+    if (!depthBuffer) {
+        printf("ERREUR: malloc depthBuffer failed!\n");
+        return 1;
+    }
+    //memset(depthBuffer, 0x7F, cfg.screen_width * cfg.screen_height * sizeof(float));
+
     threadData = malloc(cfg.num_threads * sizeof(ThreadData));
     if (!threadData) {
         printf("ERREUR: malloc threadData failed!\n");
@@ -1414,7 +1521,10 @@ int main(void)
     ctx.blur = cfg.blur;
     ctx.radius = cfg.radius;
     ctx.pass = cfg.pass;
-
+    ctx.dof = cfg.dof;
+    ctx.maxBlurRadius = cfg.maxBlurRadius;
+    ctx.focalDistance = cfg.focalDistance;
+    ctx.focalRange = cfg.focalRange;
 
     if (cfg.envMap_enable) {
         ctx.envMap = LoadImage(cfg.envMap);
@@ -1465,11 +1575,12 @@ int main(void)
         UnloadImage(img);
 
         // Init
-        pthread_barrier_init(&barrierStart,        NULL, cfg.num_threads + 1);
-        pthread_barrier_init(&barrierEnd,          NULL, cfg.num_threads + 1);
-        pthread_barrier_init(&barrierSkyboxDone,   NULL, cfg.num_threads + 1);
-        if (cfg.blur)
-            pthread_barrier_init(&barrierBlurPass1,    NULL, cfg.num_threads + 1);
+        pthread_barrier_init(&barrierStart,      NULL, cfg.num_threads + 1);
+        pthread_barrier_init(&barrierEnd,        NULL, cfg.num_threads + 1);
+        pthread_barrier_init(&barrierSkyboxDone, NULL, cfg.num_threads + 1);
+        pthread_barrier_init(&barrierBlurPass1,  NULL, cfg.num_threads + 1);
+        pthread_barrier_init(&barrierDoFPass1,   NULL, cfg.num_threads + 1);
+        pthread_barrier_init(&barrierTilesDone,  NULL, cfg.num_threads + 1);
 
         initThreads(&ctx);
     }
@@ -1821,6 +1932,7 @@ int main(void)
     free(threadData);
     free(framebuffer);
     free(framebufferBlur);
+    free(depthBuffer);
     free(smoothNormals);
     free(PolyList);
     free(visiblePolys);

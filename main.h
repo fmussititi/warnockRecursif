@@ -59,6 +59,10 @@ typedef struct {
     int blur;
     int radius;
     int pass;
+    int dof;
+    float focalDistance;  // ex: 5.0f  — profondeur au point net
+    float focalRange;     // ex: 3.0f  — zone nette (±)
+    int   maxBlurRadius;  // ex: 10
 
     int num_threads;
     int tile_size;

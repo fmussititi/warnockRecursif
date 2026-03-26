@@ -44,6 +44,11 @@ typedef struct {
     int radius;
     int pass;
 
+    // DepthOfField
+    int dof;
+    float focalDistance, focalRange;
+    int   maxBlurRadius;
+
     // Tiles
     int num_threads;
     int tile_size;
@@ -82,9 +87,13 @@ Config loadConfig(const char* filename)
         .tex_normal     = "./ressources/rusty_metal_02_nor_gl_1k.jpg",
         .envMap_enable  = 1,
         .envMap         = "./ressources/bell_tower.jpg",
-        .blur           = 1,
+        .blur           = 0,
         .radius         = 5,
         .pass           = 3,
+        .dof            = 1,
+        .focalDistance  = 5.0f,
+        .focalRange     = 3.0f,
+        .maxBlurRadius  = 10,
         .num_threads    = 8,
         .tile_size      = 32,
         .max_tri_per_tile = 20000,
@@ -152,12 +161,16 @@ Config loadConfig(const char* filename)
         else if (!strcmp(k, "blur"))              cfg.blur              = atoi(v);
         else if (!strcmp(k, "radius"))            cfg.radius            = atoi(v);
         else if (!strcmp(k, "pass"))              cfg.pass              = atoi(v);
+        else if (!strcmp(k, "dof"))               cfg.dof               = atoi(v);
+        else if (!strcmp(k, "focalDistance"))     cfg.focalDistance     = atof(v);
+        else if (!strcmp(k, "focalRange"))        cfg.focalRange        = atof(v);
+        else if (!strcmp(k, "maxBlurRadius"))     cfg.maxBlurRadius     = atoi(v);
         else if (!strcmp(k, "num_threads"))       cfg.num_threads       = atoi(v);
         else if (!strcmp(k, "tile_size"))         cfg.tile_size         = atoi(v);
         else if (!strcmp(k, "max_tri_per_tile"))  cfg.max_tri_per_tile  = atoi(v);
         else if (!strcmp(k, "debug_tiles"))       cfg.debug_tiles       = atoi(v);
         else if (!strcmp(k, "tree_depth"))        cfg.tree_depth        = atoi(v);
-        else if (!strcmp(k, "contour_arbre"))     cfg.contour_arbre        = atoi(v);
+        else if (!strcmp(k, "contour_arbre"))     cfg.contour_arbre     = atoi(v);
         else if (!strcmp(k, "max_poly"))          cfg.max_poly          = atoi(v);
     }
 
