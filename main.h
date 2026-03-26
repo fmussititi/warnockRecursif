@@ -1,3 +1,6 @@
+#ifndef MAIN_H
+#define MAIN_H
+
 #include <pthread.h>
 
 typedef struct poly
@@ -89,14 +92,4 @@ typedef struct {
     pthread_cond_t cond;
 } ThreadData;
 
-void subdivise(Region* r, Region regions[4]);
-
-int point_in_triangle(Vector2 p, Poly* tri);
-
-int region_fully_covered(Region* r, Poly* tri);
-
-int region_outside(Region* r, Poly* tri);
-
-void drawRegionZBuffer(RenderContext* ctx, Region* r, Poly* polys, int* indices, int count);
-
-void warnock(RenderContext* ctx, Region* r, int* indices, int count, int depth);
+#endif // MAIN_H

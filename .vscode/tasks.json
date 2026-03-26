@@ -1,44 +1,109 @@
 {
-  "version": "2.0.0",
-  "tasks": 
-    [
+    "version": "2.0.0",
+    "tasks": [
         {
-        "type": "cppbuild",
-        "label": "build raylib SoftRender3D",
-        "command": "F:\\Cplusplus\\ucrt64\\bin\\gcc.exe",
-        "args": [
-            "-I",
-            "F:\\C++\\raylib\\include",
-            "F:\\C++\\Projets\\RayLib\\warnockRecursif\\main.c",
-            "-o",
-            "SoftRender3D.exe",
-            "-O2",
-            "-mavx2",
-            "-mfma",
-            "-static",
-            "-static-libgcc",
-            "-static-libstdc++",
-            "-L",
-            "F:\\C++\\raylib\\lib",
-            "-lraylib",
-            "-lwinmm",
-            "-lgdi32",
-            "-lopengl32",
-            "-luser32",
-            "-lkernel32",
-            "-lpthread"
-        ],
-        "options": {
-            "cwd": "${workspaceFolder}"
+            "type": "cppbuild",
+            "label": "build raylib SoftRender3D OK",
+            "command": "F:\\Cplusplus\\ucrt64\\bin\\gcc.exe",
+            "args": [
+                "-I", "F:\\C++\\raylib\\include",
+                "F:\\C++\\Projets\\RayLib\\warnockRecursif\\main.c",
+                "F:\\C++\\Projets\\RayLib\\warnockRecursif\\globals.c",
+                "F:\\C++\\Projets\\RayLib\\warnockRecursif\\utils.c",
+                "F:\\C++\\Projets\\RayLib\\warnockRecursif\\skybox.c",
+                "F:\\C++\\Projets\\RayLib\\warnockRecursif\\shading.c",
+                "F:\\C++\\Projets\\RayLib\\warnockRecursif\\warnock.c",
+                "F:\\C++\\Projets\\RayLib\\warnockRecursif\\zbuffer.c",
+                "F:\\C++\\Projets\\RayLib\\warnockRecursif\\frustum.c",
+                "F:\\C++\\Projets\\RayLib\\warnockRecursif\\tiles.c",
+                "F:\\C++\\Projets\\RayLib\\warnockRecursif\\config.c",
+                "-o", "SoftRender3D.exe",
+                "-O2", "-mavx2", "-mfma",
+                "-static", "-static-libgcc", "-static-libstdc++",
+                "-L", "F:\\C++\\raylib\\lib",
+                "-lraylib", "-lwinmm", "-lgdi32", "-lopengl32", "-luser32", "-lkernel32",
+                "-lpthread"
+            ],
+            "options": { "cwd": "${workspaceFolder}" },
+            "problemMatcher": ["$gcc"],
+            "group": { "kind": "build", "isDefault": true },
+            "detail": "compiler: F:\\Cplusplus\\ucrt64\\bin\\gcc.exe"
         },
-        "problemMatcher": [
-            "$gcc"
-        ],
-        "group": {
-            "kind": "build",
-            "isDefault": true
+        {
+            "type": "cppbuild",
+            "label": "build raylib SoftRender3D",
+            "command": "F:\\Cplusplus\\ucrt64\\bin\\gcc.exe",
+            "args": [
+                "-I", "F:\\C++\\raylib\\include",
+                "F:\\C++\\Projets\\RayLib\\warnockRecursif\\main.c",
+                "-o", "SoftRender3D.exe",
+                "-O2",
+                "-mavx2",
+                "-mfma",
+                "-static",
+                "-static-libgcc",
+                "-static-libstdc++",
+                "-L", "F:\\C++\\raylib\\lib",
+                "-lraylib", "-lwinmm", "-lgdi32", "-lopengl32", "-luser32", "-lkernel32",
+                "-lpthread"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": ["$gcc"],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "detail": "compiler: F:\\Cplusplus\\ucrt64\\bin\\gcc.exe"
         },
-        "detail": "compiler: F:\\Cplusplus\\ucrt64\\bin\\gcc.exe"
+        {
+            "type": "cppbuild",
+            "label": "build DEBUG ThreadSanitizer",
+            "command": "F:\\Cplusplus\\ucrt64\\bin\\gcc.exe",
+            "args": [
+                "-I", "F:\\C++\\raylib\\include",
+                "F:\\C++\\Projets\\RayLib\\warnockRecursif\\main.c",
+                "-o", "SoftRender3D_tsan.exe",
+                "-O0",
+                "-g",
+                "-fsanitize=thread",
+                "-mavx2",
+                "-mfma",
+                "-L", "F:\\C++\\raylib\\lib",
+                "-lraylib", "-lwinmm", "-lgdi32", "-lopengl32", "-luser32", "-lkernel32",
+                "-lpthread"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": ["$gcc"],
+            "group": "build",
+            "detail": "DEBUG avec ThreadSanitizer (pas de -static)"
+        },
+        {
+            "type": "cppbuild",
+            "label": "build DEBUG AddressSanitizer",
+            "command": "F:\\Cplusplus\\ucrt64\\bin\\gcc.exe",
+            "args": [
+                "-I", "F:\\C++\\raylib\\include",
+                "F:\\C++\\Projets\\RayLib\\warnockRecursif\\main.c",
+                "-o", "SoftRender3D_asan.exe",
+                "-O0",
+                "-g",
+                "-fsanitize=address",
+                "-mavx2",
+                "-mfma",
+                "-L", "F:\\C++\\raylib\\lib",
+                "-lraylib", "-lwinmm", "-lgdi32", "-lopengl32", "-luser32", "-lkernel32",
+                "-lpthread"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": ["$gcc"],
+            "group": "build",
+            "detail": "DEBUG avec AddressSanitizer (détecte out-of-bounds, use-after-free)"
         }
     ]
 }
