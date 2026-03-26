@@ -1821,6 +1821,14 @@ int main(void)
         if (IsKeyDown(KEY_P))     camera.target.z += 1.0f;
         if (IsKeyDown(KEY_L))     camera.target.z -= 1.0f;
 
+        // Réglage DoF en temps réel
+        if (IsKeyDown(KEY_KP_ADD))      ctx.focalDistance -= 0.1f;  // focus plus proche
+        if (IsKeyDown(KEY_KP_SUBTRACT)) ctx.focalDistance += 0.1f;  // focus plus loin
+        if (IsKeyDown(KEY_KP_MULTIPLY)) ctx.focalRange    += 0.1f;  // zone nette plus large
+        if (IsKeyDown(KEY_KP_DIVIDE)  ) ctx.focalRange     = fmaxf(0.1f, ctx.focalRange - 0.1f);
+        if (IsKeyDown(KEY_KP_0))        ctx.maxBlurRadius  = Clamp(ctx.maxBlurRadius + 1, 1, 20);
+        if (IsKeyDown(KEY_KP_1))        ctx.maxBlurRadius  = Clamp(ctx.maxBlurRadius - 1, 1, 20);
+
         if (cfg.warnock){
             DrawText(TextFormat("Hybride : Warnock + ZBuffer, Profondeur de l'arbre = %d", cfg.tree_depth), 10, 10, 20, WHITE);
 
@@ -1936,6 +1944,12 @@ int main(void)
         DrawText(TextFormat("Target: %.1f %.1f %.1f", 
             camera.target.x, camera.target.y, camera.target.z), 
             10, 180, 20, WHITE);
+
+        if (cfg.dof && cfg.tiles) {
+            DrawText(TextFormat("DoF focal: %.1f  range: %.1f  blur: %d",
+                ctx.focalDistance, ctx.focalRange, ctx.maxBlurRadius),
+                10, 210, 20, YELLOW);
+        }
 
         EndDrawing();
     }
