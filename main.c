@@ -11,10 +11,6 @@
 
 #pragma region Paramètres généraux et Variables globales
 
-// Parametres pour Tiles
-#define MAX_TRI_PER_TILE 20000
-#define MAX_TILES 2000
-
 int tilesX;
 int tilesY;
 atomic_int tilesRemaining;
@@ -34,12 +30,12 @@ pthread_barrier_t barrierTilesDone;
 
 typedef struct {
     int count;
-    int indices[MAX_TRI_PER_TILE];
+    int* indices;
     float minZ;
     float maxZ;
 } Tile;
 
-Tile tiles[MAX_TILES];
+Tile* tiles;
 
 #pragma endregion
 
@@ -711,10 +707,10 @@ void binTriangles(RenderContext* ctx)
                 int tileIndex = ty * tilesX + tx;
                 Tile* tile = &tiles[tileIndex];
 
-                if (tile->count >= MAX_TRI_PER_TILE){
-                    printf("OVERFLOW tile [%d,%d] count=%d\n", tx, ty, tile->count);
-                    continue;
-                }
+                //if (tile->count >= ctx->max_tri_per_tile){
+                //    printf("OVERFLOW tile [%d,%d] count=%d\n", tx, ty, tile->count);
+                //    continue;
+                //}
 
                 // Optimisation --> on range uniquement dans les tiles utiles
                 Region myTile = {
@@ -1425,6 +1421,9 @@ int main(void)
     tilesX = cfg.screen_width / cfg.tile_size;
     tilesY = cfg.screen_height / cfg.tile_size;
 
+    printf("max_tri_per_tile : %d\n", cfg.max_tri_per_tile);
+    printf("max_tiles : %d\n", cfg.max_tiles);
+
     // Utiliser malloc après lecture de la config
     framebuffer = malloc(cfg.screen_width * cfg.screen_height * sizeof(Color));
     if (!framebuffer) {
@@ -1443,7 +1442,20 @@ int main(void)
         printf("ERREUR: malloc depthBuffer failed!\n");
         return 1;
     }
-    //memset(depthBuffer, 0x7F, cfg.screen_width * cfg.screen_height * sizeof(float));
+  
+    tiles = malloc(cfg.max_tiles * sizeof(Tile));
+    if (!tiles) {
+        printf("ERREUR: malloc tiles failed!\n");
+        return 1;
+    }
+
+    // Allouer les indices pour chaque tile
+    for (int i = 0; i < cfg.max_tiles; i++) {
+        tiles[i].indices = malloc(cfg.max_tri_per_tile * sizeof(int));
+        tiles[i].count = 0;
+        tiles[i].minZ = 1e9f;
+        tiles[i].maxZ = -1e9f;
+    }
 
     threadData = malloc(cfg.num_threads * sizeof(ThreadData));
     if (!threadData) {
@@ -1518,6 +1530,7 @@ int main(void)
     ctx.num_threads = cfg.num_threads;
     ctx.tile_size = cfg.tile_size;
     ctx.max_tri_per_tile = cfg.max_tri_per_tile;
+    ctx.max_tiles = cfg.max_tiles;
     ctx.envMap_enable = cfg.envMap_enable;
     ctx.blur = cfg.blur;
     ctx.radius = cfg.radius;
@@ -1936,6 +1949,10 @@ int main(void)
     free(smoothNormals);
     free(PolyList);
     free(visiblePolys);
+
+    for (int i = 0; i < cfg.max_tiles; i++)
+        free(tiles[i].indices);
+    free(tiles);
 
     if (cfg.zbuffer) free(zbuffer);
 
