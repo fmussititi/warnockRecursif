@@ -20,3 +20,4 @@ pthread_barrier_t barrierDoFPass2;
 pthread_barrier_t barrierTilesDone;
 
 Tile* tiles = NULL;
+int* all_indices = NULL;

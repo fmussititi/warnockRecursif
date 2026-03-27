@@ -55,5 +55,6 @@ typedef struct {
 } Tile;
 
 extern Tile* tiles;
+extern int* all_indices;
 
 #endif // GLOBALS_H

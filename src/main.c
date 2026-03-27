@@ -19,71 +19,75 @@ int main(void)
 {
     Config cfg = loadConfig("config.ini");
 
-    tilesX = cfg.screen_width  / cfg.tile_size;
-    tilesY = cfg.screen_height / cfg.tile_size;
-
-    printf("max_tri_per_tile : %d\n", cfg.max_tri_per_tile);
-    printf("max_tiles : %d\n", cfg.max_tiles);
-
-    framebuffer = malloc(cfg.screen_width * cfg.screen_height * sizeof(Color));
-    if (!framebuffer) { printf("ERREUR: malloc framebuffer failed!\n"); return 1; }
-
-    framebufferBlur = malloc(cfg.screen_width * cfg.screen_height * sizeof(Color));
-    if (!framebufferBlur) { printf("ERREUR: malloc framebufferBlur failed!\n"); return 1; }
-
-    depthBuffer = malloc(cfg.screen_width * cfg.screen_height * sizeof(float));
-    if (!depthBuffer) { printf("ERREUR: malloc depthBuffer failed!\n"); return 1; }
-
-    // 1. Calculer le nombre de tuiles nécessaires
-    int tilesX = (cfg.screen_width  + cfg.tile_size - 1) / cfg.tile_size;
-    int tilesY = (cfg.screen_height + cfg.tile_size - 1) / cfg.tile_size;
-    int total_tiles = tilesX * tilesY;
-
-    // 2. Mettre à jour la config pour que le reste du code soit cohérent
-    cfg.max_tiles = total_tiles; 
-
-    // 3. Allocation principale
-    tiles = malloc(cfg.max_tiles * sizeof(Tile));
-    if (!tiles) { 
-        fprintf(stderr, "ERREUR: malloc %d tiles failed!\n", cfg.max_tiles); 
-        return 1; 
-    }
-
-    // Alloue TOUS les indices d'un coup
-    int* all_indices = malloc(cfg.max_tiles * cfg.max_tri_per_tile * sizeof(int));
-    if (!all_indices) { 
-        fprintf(stderr, "ERREUR: malloc %d all_indices failed!\n", cfg.max_tiles * cfg.max_tri_per_tile); 
-        return 1; 
-    }
-
-    // 4. Allocation des listes d'indices
-    for (int i = 0; i < cfg.max_tiles; i++) {
-        tiles[i].indices = &all_indices[i * cfg.max_tri_per_tile];;
-        tiles[i].count = 0;
-        tiles[i].minZ  = 1e9f;
-        tiles[i].maxZ  = -1e9f;
-    }
-
-    threadsData = malloc(cfg.num_threads * sizeof(ThreadData));
-    if (!threadsData) { printf("ERREUR: malloc threadData failed!\n"); return 1; }
-
-    threads = malloc(cfg.num_threads * sizeof(pthread_t));
-    if (!threads) { printf("ERREUR: malloc threads failed!\n"); return 1; }
-
-    if (cfg.warnock)
+    if (cfg.warnock && !cfg.zbuffer && !cfg.tiles)
         InitWindow(cfg.screen_width, cfg.screen_height,
             TextFormat("Hybride : Warnock + ZBuffer rendering %dx%d",
                 cfg.screen_width, cfg.screen_height));
-
-    if (cfg.zbuffer)
+    else
+    if (cfg.zbuffer && !cfg.warnock && !cfg.tiles)
         InitWindow(cfg.screen_width, cfg.screen_height,
             TextFormat("ZBuffer rendering %dx%d",
                 cfg.screen_width, cfg.screen_height));
-
-    if (cfg.tiles)
+    else
+    if (cfg.tiles && !cfg.warnock && !cfg.zbuffer)
         InitWindow(cfg.screen_width, cfg.screen_height,
             TextFormat("SoftRender3D - Tiles %dx%d - %d threads",
                 cfg.screen_width, cfg.screen_height, cfg.num_threads));
+    else return 1;
+
+    if (cfg.tiles){
+
+        tilesX = cfg.screen_width  / cfg.tile_size;
+        tilesY = cfg.screen_height / cfg.tile_size;
+
+        framebuffer = malloc(cfg.screen_width * cfg.screen_height * sizeof(Color));
+        if (!framebuffer) { printf("ERREUR: malloc framebuffer failed!\n"); return 1; }
+
+        framebufferBlur = malloc(cfg.screen_width * cfg.screen_height * sizeof(Color));
+        if (!framebufferBlur) { printf("ERREUR: malloc framebufferBlur failed!\n"); return 1; }
+
+        depthBuffer = malloc(cfg.screen_width * cfg.screen_height * sizeof(float));
+        if (!depthBuffer) { printf("ERREUR: malloc depthBuffer failed!\n"); return 1; }
+
+        // 1. Calculer le nombre de tuiles nécessaires
+        int tilesX = (cfg.screen_width  + cfg.tile_size - 1) / cfg.tile_size;
+        int tilesY = (cfg.screen_height + cfg.tile_size - 1) / cfg.tile_size;
+        int total_tiles = tilesX * tilesY;
+
+        // 2. Mettre à jour la config pour que le reste du code soit cohérent
+        cfg.max_tiles = total_tiles; 
+
+        // 3. Allocation principale
+        tiles = malloc(cfg.max_tiles * sizeof(Tile));
+        if (!tiles) { 
+            fprintf(stderr, "ERREUR: malloc %d tiles failed!\n", cfg.max_tiles); 
+            return 1; 
+        }
+
+        // Alloue TOUS les indices d'un coup
+        int* all_indices = malloc(cfg.max_tiles * cfg.max_tri_per_tile * sizeof(int));
+        if (!all_indices) { 
+            fprintf(stderr, "ERREUR: malloc %d all_indices failed!\n", cfg.max_tiles * cfg.max_tri_per_tile); 
+            return 1; 
+        }
+
+        // 4. Allocation des listes d'indices
+        for (int i = 0; i < cfg.max_tiles; i++) {
+            tiles[i].indices = &all_indices[i * cfg.max_tri_per_tile];;
+            tiles[i].count = 0;
+            tiles[i].minZ  = 1e9f;
+            tiles[i].maxZ  = -1e9f;
+        }
+
+        printf("max_tri_per_tile : %d\n", cfg.max_tri_per_tile);
+        printf("max_tiles : %d\n", cfg.max_tiles);
+
+        threadsData = malloc(cfg.num_threads * sizeof(ThreadData));
+        if (!threadsData) { printf("ERREUR: malloc threadData failed!\n"); return 1; }
+
+        threads = malloc(cfg.num_threads * sizeof(pthread_t));
+        if (!threads) { printf("ERREUR: malloc threads failed!\n"); return 1; }
+    }
 
     // ── Caméra ────────────────────────────────────────────────────────────────
     Camera3D camera = { 0 };
@@ -130,26 +134,7 @@ int main(void)
     ctx.focalDistance = cfg.focalDistance;
     ctx.focalRange    = cfg.focalRange;
 
-    if (cfg.envMap_enable) {
-        ctx.envMap = LoadImage(cfg.envMap);
-        ImageFormat(&ctx.envMap, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);
-    } else {
-        ctx.envMap.data = NULL; ctx.envMap.width = 0; ctx.envMap.height = 0;
-    }
-
-    if (cfg.textures_enabled) {
-        ctx.texImage  = LoadImage(cfg.tex_diffuse);
-        ImageFormat(&ctx.texImage,  PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);
-        ctx.normalMap = LoadImage(cfg.tex_normal);
-        ImageFormat(&ctx.normalMap, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);
-    } else {
-        ctx.texImage.data = NULL;
-        ctx.normalMap.data = NULL;
-    }
-
-    ctx.skyU = malloc(cfg.screen_width * cfg.screen_height * sizeof(float));
-    ctx.skyV = malloc(cfg.screen_width * cfg.screen_height * sizeof(float));
-
+    
     // ── Smooth normals ────────────────────────────────────────────────────────
     Vector3* smoothNormals = calloc(vertexCount, sizeof(Vector3));
     Poly*    PolyList      = malloc(mesh.vertexCount/3 * sizeof(Poly));
@@ -163,10 +148,60 @@ int main(void)
         PolyList[i].couleur = couleurAleatoire();
     }
 
-    if (cfg.zbuffer)
-        zbuffer = malloc(cfg.screen_width * cfg.screen_height * sizeof(float));
 
-    if (cfg.tiles) {
+    if (mesh.normals != NULL) {
+        // 1. Si c'est une soupe, on optimise
+        if (mesh.indices == NULL) {
+            printf("Optimisation de la soupe de triangles...\n");
+            
+            Mesh smoothMesh = OptimizeMesh(mesh); // On crée le nouveau
+            
+            // LIBÉRATION SÉCURISÉE
+            // On ne décharge pas tout de suite si on veut encore lire les anciennes données
+            // ou alors on rafraîchit la référence immédiatement.
+            UnloadMesh(model.meshes[0]); 
+            model.meshes[0] = smoothMesh;
+            
+            // TRÈS IMPORTANT : On met à jour notre variable locale 'mesh'
+            mesh = model.meshes[0]; 
+        }
+
+        // 2. Maintenant on peut allouer et remplir smoothNormals
+        // Attention : utilise le NOUVEAU vertexCount (qui est plus petit)
+        smoothNormals = realloc(smoothNormals, mesh.vertexCount * sizeof(Vector3));
+
+        for (int i = 0; i < mesh.vertexCount; i++) {
+            smoothNormals[i] = (Vector3){
+                mesh.normals[i*3], 
+                mesh.normals[i*3+1], 
+                mesh.normals[i*3+2]
+            };
+        }
+        printf("Succès : %d normales lissées extraites.\n", mesh.vertexCount);
+    }
+
+
+    if (cfg.tiles){
+        if (cfg.envMap_enable) {
+            ctx.envMap = LoadImage(cfg.envMap);
+            ImageFormat(&ctx.envMap, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);
+        } else {
+            ctx.envMap.data = NULL; ctx.envMap.width = 0; ctx.envMap.height = 0;
+        }
+
+        if (cfg.textures_enabled) {
+            ctx.texImage  = LoadImage(cfg.tex_diffuse);
+            ImageFormat(&ctx.texImage,  PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);
+            ctx.normalMap = LoadImage(cfg.tex_normal);
+            ImageFormat(&ctx.normalMap, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);
+        } else {
+            ctx.texImage.data = NULL;
+            ctx.normalMap.data = NULL;
+        }
+
+        ctx.skyU = malloc(cfg.screen_width * cfg.screen_height * sizeof(float));
+        ctx.skyV = malloc(cfg.screen_width * cfg.screen_height * sizeof(float));
+
         img = GenImageColor(cfg.screen_width, cfg.screen_height, RAYWHITE);
         tex = LoadTextureFromImage(img);
         UnloadImage(img);
@@ -182,34 +217,8 @@ int main(void)
         initThreads(&ctx);
     }
 
-    // Passe 1 : normales par face
-    Vector3* faceNormals = calloc(vertexCount, sizeof(Vector3));
-    for (int i = 0; i < mesh.triangleCount; i++) {
-        int i0 = i*3, i1 = i*3+1, i2 = i*3+2;
-        Vector3 v0 = getVertex(mesh, i0);
-        Vector3 v1 = getVertex(mesh, i1);
-        Vector3 v2 = getVertex(mesh, i2);
-        Vector3 n  = Vector3CrossProduct(Vector3Subtract(v1,v0), Vector3Subtract(v2,v0));
-        faceNormals[i0] = Vector3Add(faceNormals[i0], n);
-        faceNormals[i1] = Vector3Add(faceNormals[i1], n);
-        faceNormals[i2] = Vector3Add(faceNormals[i2], n);
-    }
-
-    // Passe 2 : fusion par position
-    printf("Calcul smooth normals...\n");
-    for (int i = 0; i < vertexCount; i++) {
-        Vector3 vi = getVertex(mesh, i);
-        Vector3 accumulated = {0, 0, 0};
-        for (int j = 0; j < vertexCount; j++) {
-            Vector3 vj = getVertex(mesh, j);
-            if (fabsf(vi.x-vj.x) < 0.0001f &&
-                fabsf(vi.y-vj.y) < 0.0001f &&
-                fabsf(vi.z-vj.z) < 0.0001f)
-                accumulated = Vector3Add(accumulated, faceNormals[j]);
-        }
-        smoothNormals[i] = Vector3Normalize(accumulated);
-    }
-    free(faceNormals);
+    if (cfg.zbuffer)
+        zbuffer = malloc(cfg.screen_width * cfg.screen_height * sizeof(float));
 
     // ── Boucle principale ─────────────────────────────────────────────────────
     while (!WindowShouldClose())
@@ -247,7 +256,12 @@ int main(void)
         // ── Préparation des polygones ─────────────────────────────────────────
         int inc = 0;
         for (int i = 0; i < mesh.triangleCount; i++) {
-            int i0 = i*3, i1 = i*3+1, i2 = i*3+2;
+            //int i0 = i*3, i1 = i*3+1, i2 = i*3+2;
+
+            // ON RÉCUPÈRE LES INDICES DEPUIS LE BUFFER D'INDICES
+            int i0 = ((unsigned short *)mesh.indices)[i * 3 + 0];
+            int i1 = ((unsigned short *)mesh.indices)[i * 3 + 1];
+            int i2 = ((unsigned short *)mesh.indices)[i * 3 + 2];
 
             Vector3 v0 = Vector3Transform(getVertex(mesh, i0), rotation);
             Vector3 v1 = Vector3Transform(getVertex(mesh, i1), rotation);
@@ -432,27 +446,31 @@ int main(void)
     }
 
     // ── Nettoyage ─────────────────────────────────────────────────────────────
-    free(threads);
-    for (int i = 0; i < cfg.num_threads; i++) {
-        free(threadsData[i].r_sum);
-        free(threadsData[i].g_sum);
-        free(threadsData[i].b_sum);
-    }
-    free(threadsData);
+    if (cfg.tiles){
+        free(threads);
+        for (int i = 0; i < cfg.num_threads; i++) {
+            free(threadsData[i].r_sum);
+            free(threadsData[i].g_sum);
+            free(threadsData[i].b_sum);
+        }
+        free(threadsData);
 
-    free(framebuffer);
-    free(framebufferBlur);
-    free(depthBuffer);
+        free(framebuffer);
+        free(framebufferBlur);
+        free(depthBuffer);
+
+        free(all_indices);
+        free(tiles);
+
+        if (ctx.skyU)       free(ctx.skyU);
+        if (ctx.skyV)       free(ctx.skyV);
+    }
+
     free(smoothNormals);
     free(PolyList);
     free(visiblePolys);
 
-    free(all_indices);
-    free(tiles);
-
     if (cfg.zbuffer)    free(zbuffer);
-    if (ctx.skyU)       free(ctx.skyU);
-    if (ctx.skyV)       free(ctx.skyV);
 
     UnloadModel(model);
     if (ctx.texImage.data)  UnloadImage(ctx.texImage);
