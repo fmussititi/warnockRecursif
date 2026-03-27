@@ -34,13 +34,34 @@ int main(void)
     depthBuffer = malloc(cfg.screen_width * cfg.screen_height * sizeof(float));
     if (!depthBuffer) { printf("ERREUR: malloc depthBuffer failed!\n"); return 1; }
 
+    // 1. Calculer le nombre de tuiles nécessaires
+    int tilesX = (cfg.screen_width  + cfg.tile_size - 1) / cfg.tile_size;
+    int tilesY = (cfg.screen_height + cfg.tile_size - 1) / cfg.tile_size;
+    int total_tiles = tilesX * tilesY;
+
+    // 2. Mettre à jour la config pour que le reste du code soit cohérent
+    cfg.max_tiles = total_tiles; 
+
+    // 3. Allocation principale
     tiles = malloc(cfg.max_tiles * sizeof(Tile));
-    if (!tiles) { printf("ERREUR: malloc tiles failed!\n"); return 1; }
+    if (!tiles) { 
+        fprintf(stderr, "ERREUR: malloc %d tiles failed!\n", cfg.max_tiles); 
+        return 1; 
+    }
+
+    // Alloue TOUS les indices d'un coup
+    int* all_indices = malloc(cfg.max_tiles * cfg.max_tri_per_tile * sizeof(int));
+    if (!all_indices) { 
+        fprintf(stderr, "ERREUR: malloc %d all_indices failed!\n", cfg.max_tiles * cfg.max_tri_per_tile); 
+        return 1; 
+    }
+
+    // 4. Allocation des listes d'indices
     for (int i = 0; i < cfg.max_tiles; i++) {
-        tiles[i].indices = malloc(cfg.max_tri_per_tile * sizeof(int));
-        tiles[i].count   = 0;
-        tiles[i].minZ    = 1e9f;
-        tiles[i].maxZ    = -1e9f;
+        tiles[i].indices = &all_indices[i * cfg.max_tri_per_tile];;
+        tiles[i].count = 0;
+        tiles[i].minZ  = 1e9f;
+        tiles[i].maxZ  = -1e9f;
     }
 
     threadsData = malloc(cfg.num_threads * sizeof(ThreadData));
@@ -426,7 +447,7 @@ int main(void)
     free(PolyList);
     free(visiblePolys);
 
-    for (int i = 0; i < cfg.max_tiles; i++) free(tiles[i].indices);
+    free(all_indices);
     free(tiles);
 
     if (cfg.zbuffer)    free(zbuffer);
