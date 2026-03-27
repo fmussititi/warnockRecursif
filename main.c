@@ -155,6 +155,7 @@ int main(void)
         pthread_barrier_init(&barrierSkyboxDone, NULL, cfg.num_threads + 1);
         pthread_barrier_init(&barrierBlurPass1,  NULL, cfg.num_threads + 1);
         pthread_barrier_init(&barrierDoFPass1,   NULL, cfg.num_threads + 1);
+        pthread_barrier_init(&barrierDoFPass2,   NULL, cfg.num_threads + 1);
         pthread_barrier_init(&barrierTilesDone,  NULL, cfg.num_threads + 1);
 
         initThreads(&ctx);

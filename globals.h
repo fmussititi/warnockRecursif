@@ -26,6 +26,7 @@ extern pthread_barrier_t barrierEnd;
 extern pthread_barrier_t barrierSkyboxDone;
 extern pthread_barrier_t barrierBlurPass1;
 extern pthread_barrier_t barrierDoFPass1;
+extern pthread_barrier_t barrierDoFPass2;
 extern pthread_barrier_t barrierTilesDone;
 
 // Tiles

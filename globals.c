@@ -16,6 +16,7 @@ pthread_barrier_t barrierEnd;
 pthread_barrier_t barrierSkyboxDone;
 pthread_barrier_t barrierBlurPass1;
 pthread_barrier_t barrierDoFPass1;
+pthread_barrier_t barrierDoFPass2;
 pthread_barrier_t barrierTilesDone;
 
 Tile* tiles = NULL;

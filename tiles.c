@@ -253,37 +253,30 @@ void* worker(void* arg)
     while (true) {
         pthread_barrier_wait(&barrierStart);
 
-        // 1. PHASE SKYBOX (Remplissage initial)
+        // ── 1. SKYBOX ────────────────────────────────────────────────────────
         if (td->ctx->skyU && td->ctx->skyV && td->ctx->envMap.data) {
             for (int y = td->startLine; y < td->endLine; y++) {
                 if (y < 0 || y >= H) continue;
-                int screenY = H - 1 - y; // Correction de l'inversion Y si nécessaire
-                int base = screenY * W;
-                int lutRow = y * W;
-                for (int x = 0; x < W; x++) {
-                    framebuffer[base + x] = SampleEquirectangularUV(td->ctx, 
-                        td->ctx->skyU[lutRow + x], td->ctx->skyV[lutRow + x]);
-                }
+                int screenY = H - 1 - y;
+                int base    = screenY * W;
+                int lutRow  = y * W;
+                for (int x = 0; x < W; x++)
+                    framebuffer[base + x] = SampleEquirectangularUV(td->ctx,
+                        td->ctx->skyU[lutRow + x],
+                        td->ctx->skyV[lutRow + x]);
             }
-        }else {
-            // Cas sans Skybox : On remplit avec une couleur par défaut (ex: noir ou bleu nuit)
-            // Couleur personnalisée
+        } else {
             Color clearColor = (Color){ 20, 20, 30, 255 };
-            
             for (int y = td->startLine; y < td->endLine; y++) {
                 if (y < 0 || y >= H) continue;
                 int screenY = H - 1 - y;
                 Color* rowPtr = &framebuffer[screenY * W];
-                
-                // Cette boucle est généralement "vectorisée" par le compilateur
-                // ce qui la rend presque aussi rapide qu'un memset
-                for (int x = 0; x < W; x++) {
+                for (int x = 0; x < W; x++)
                     rowPtr[x] = clearColor;
-                }
             }
         }
 
-        // 2. RESET DEPTH BUFFER (tous les threads, chacun sa plage de lignes)
+        // ── 2. RESET DEPTH BUFFER (distribué sur tous les threads) ───────────
         if (td->ctx->dof) {
             for (int y = td->startLine; y < td->endLine; y++) {
                 int row = y * W;
@@ -292,44 +285,50 @@ void* worker(void* arg)
             }
         }
 
-        // Toujours attendre, skybox ou pas
+        // Synchronisation : skybox + reset depth terminés
         pthread_barrier_wait(&barrierSkyboxDone);
 
-        // 3. PHASE TRIANGLES (Dessin par-dessus la skybox)
+        // ── 3. TRIANGLES ─────────────────────────────────────────────────────
         for (int t = td->startTile; t < td->endTile; t++) {
             int tx = t % tilesX;
             int ty = t / tilesX;
-
-            drawTile(td->ctx, tx, ty); // Remplit framebuffer ET depthBuffer
+            drawTile(td->ctx, tx, ty);
         }
 
         pthread_barrier_wait(&barrierTilesDone);
 
-        // 4. PHASE DOF (Appliquée à TOUT l'écran : Objets + Skybox)
+        // ── 4. DOF gaussien + bilatéral ──────────────────────────────────────
         if (td->ctx->dof) {
-            int maxR = td->ctx->maxBlurRadius;
+            int   maxR          = td->ctx->maxBlurRadius;
+            float focalDistance = td->ctx->focalDistance;
+            float focalRange    = td->ctx->focalRange;
 
-            // PASS 1 : Horizontal (framebuffer -> framebufferBlur)
+            // Directions hexagonales (dx, dy) normalisées
+            // Pass 1 : horizontal          ( 1.0,  0.0   )
+            // Pass 2 : diagonale 60°       ( 0.5,  0.866 )
+            // Pass 3 : diagonale -60°      (-0.5,  0.866 )
+
+            // ── PASS 1 : Horizontal (framebuffer → framebufferBlur) ──────────────
             for (int y = td->startLine; y < td->endLine; y++) {
+                if (y < 0 || y >= H) continue;
                 int row = y * W;
+
                 for (int x = 0; x < W; x++) {
-                    float depth = depthBuffer[row + x];
-                    // Calcul du CoC : si depth est 1e9, coc sera max (1.0)
-                    float coc = fabsf(depth - td->ctx->focalDistance) / td->ctx->focalRange;
-                    int radius = (int)(fminf(coc, 1.0f) * maxR);
+                    float depthCenter = depthBuffer[row + x];
+                    float coc         = fabsf(depthCenter - focalDistance) / focalRange;
+                    int   radius      = (int)(fminf(coc, 1.0f) * maxR);
 
                     if (radius <= 0) {
                         framebufferBlur[row + x] = framebuffer[row + x];
                         continue;
                     }
 
-                    int r=0, g=0, b=0, count=0;
-                    for (int dx = -radius; dx <= radius; dx++) {
-                        int nx = x + dx;
-                        if (nx >= 0 && nx < W) {
-                            Color c = framebuffer[row + nx];
-                            r += c.r; g += c.g; b += c.b; count++;
-                        }
+                    int r = 0, g = 0, b = 0, count = 0;
+                    for (int d = -radius; d <= radius; d++) {
+                        int nx = x + d;  // dy = 0 → direction horizontale
+                        if (nx < 0 || nx >= W) continue;
+                        Color c = framebuffer[row + nx];
+                        r += c.r; g += c.g; b += c.b; count++;
                     }
                     framebufferBlur[row + x] = (Color){ r/count, g/count, b/count, 255 };
                 }
@@ -337,28 +336,68 @@ void* worker(void* arg)
 
             pthread_barrier_wait(&barrierDoFPass1);
 
-            // PASS 2 : Vertical (framebufferBlur -> framebuffer)
+            // ── PASS 2 : Diagonale 60° (framebufferBlur → framebufferBlur2) ──────
+            // On réutilise framebuffer comme buffer temporaire pour la pass 2
             for (int y = td->startLine; y < td->endLine; y++) {
+                if (y < 0 || y >= H) continue;
+
                 for (int x = 0; x < W; x++) {
-                    float depth = depthBuffer[y * W + x];
-                    float coc = fabsf(depth - td->ctx->focalDistance) / td->ctx->focalRange;
-                    int radius = (int)(fminf(coc, 1.0f) * maxR);
+                    float depthCenter = depthBuffer[y * W + x];
+                    float coc         = fabsf(depthCenter - focalDistance) / focalRange;
+                    int   radius      = (int)(fminf(coc, 1.0f) * maxR);
 
-                    if (radius <= 0) continue;
+                    if (radius <= 0) {
+                        framebuffer[y * W + x] = framebufferBlur[y * W + x];
+                        continue;
+                    }
 
-                    int r=0, g=0, b=0, count=0;
-                    for (int dy = -radius; dy <= radius; dy++) {
-                        int ny = y + dy;
-                        if (ny >= 0 && ny < H) {
-                            Color c = framebufferBlur[ny * W + x];
-                            r += c.r; g += c.g; b += c.b; count++;
-                        }
+                    int r = 0, g = 0, b = 0, count = 0;
+                    for (int d = -radius; d <= radius; d++) {
+                        // direction (0.5, 0.866) → dx = d/2, dy = d*0.866
+                        int nx = x + (int)(d * 0.5f);
+                        int ny = y + (int)(d * 0.866f);
+                        if (nx < 0 || nx >= W || ny < 0 || ny >= H) continue;
+                        Color c = framebufferBlur[ny * W + nx];
+                        r += c.r; g += c.g; b += c.b; count++;
                     }
                     framebuffer[y * W + x] = (Color){ r/count, g/count, b/count, 255 };
                 }
             }
-        }
 
+            pthread_barrier_wait(&barrierDoFPass2);
+
+            // ── PASS 3 : Diagonale -60° (framebuffer → framebufferBlur) ─────────
+            // Résultat final dans framebuffer
+            for (int y = td->startLine; y < td->endLine; y++) {
+                if (y < 0 || y >= H) continue;
+
+                for (int x = 0; x < W; x++) {
+                    float depthCenter = depthBuffer[y * W + x];
+                    float coc         = fabsf(depthCenter - focalDistance) / focalRange;
+                    int   radius      = (int)(fminf(coc, 1.0f) * maxR);
+
+                    if (radius <= 0) continue;
+
+                    int r = 0, g = 0, b = 0, count = 0;
+                    for (int d = -radius; d <= radius; d++) {
+                        // direction (-0.5, 0.866) → dx = -d/2, dy = d*0.866
+                        int nx = x + (int)(-d * 0.5f);
+                        int ny = y + (int)(d  * 0.866f);
+                        if (nx < 0 || nx >= W || ny < 0 || ny >= H) continue;
+                        Color c = framebuffer[ny * W + nx];
+                        r += c.r; g += c.g; b += c.b; count++;
+                    }
+                    framebufferBlur[y * W + x] = (Color){ r/count, g/count, b/count, 255 };
+                }
+            }
+
+            // Copie finale framebufferBlur → framebuffer
+            for (int y = td->startLine; y < td->endLine; y++) {
+                if (y < 0 || y >= H) continue;
+                int row = y * W;
+                memcpy(&framebuffer[row], &framebufferBlur[row], W * sizeof(Color));
+            }
+        }
         pthread_barrier_wait(&barrierEnd);
     }
     return NULL;
@@ -396,6 +435,7 @@ void renderFrame(RenderContext* ctx)
 
     if (ctx->dof) {
         pthread_barrier_wait(&barrierDoFPass1);
+        pthread_barrier_wait(&barrierDoFPass2);
     }
 
     pthread_barrier_wait(&barrierEnd);
