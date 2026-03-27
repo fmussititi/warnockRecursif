@@ -78,15 +78,4 @@ typedef struct {
     int max_poly;
 } RenderContext;
 
-typedef struct {
-    RenderContext* ctx;
-    int startTile;
-    int endTile;
-    int startLine;
-    int endLine;
-    bool frameReady;
-    pthread_mutex_t mutex;
-    pthread_cond_t cond;
-} ThreadData;
-
 #endif // MAIN_H

@@ -8,7 +8,7 @@ Color* framebuffer   = NULL;
 Color* framebufferBlur = NULL;
 float* depthBuffer   = NULL;
 
-ThreadData* threadData = NULL;
+ThreadData* threadsData = NULL;
 pthread_t*  threads    = NULL;
 
 pthread_barrier_t barrierStart;

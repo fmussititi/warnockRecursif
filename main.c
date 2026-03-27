@@ -43,8 +43,8 @@ int main(void)
         tiles[i].maxZ    = -1e9f;
     }
 
-    threadData = malloc(cfg.num_threads * sizeof(ThreadData));
-    if (!threadData) { printf("ERREUR: malloc threadData failed!\n"); return 1; }
+    threadsData = malloc(cfg.num_threads * sizeof(ThreadData));
+    if (!threadsData) { printf("ERREUR: malloc threadData failed!\n"); return 1; }
 
     threads = malloc(cfg.num_threads * sizeof(pthread_t));
     if (!threads) { printf("ERREUR: malloc threads failed!\n"); return 1; }
@@ -412,7 +412,13 @@ int main(void)
 
     // ── Nettoyage ─────────────────────────────────────────────────────────────
     free(threads);
-    free(threadData);
+    for (int i = 0; i < cfg.num_threads; i++) {
+        free(threadsData[i].r_sum);
+        free(threadsData[i].g_sum);
+        free(threadsData[i].b_sum);
+    }
+    free(threadsData);
+
     free(framebuffer);
     free(framebufferBlur);
     free(depthBuffer);

@@ -17,7 +17,24 @@ extern Color* framebufferBlur;
 extern float* depthBuffer;
 
 // Threads
-extern ThreadData* threadData;
+typedef struct {
+    RenderContext* ctx;
+    int startTile;
+    int endTile;
+    int startLine;
+    int endLine;
+    
+// Pointeurs pour l'allocation dynamique
+    int *r_sum;
+    int *g_sum;
+    int *b_sum;
+
+    bool frameReady;
+    pthread_mutex_t mutex;
+    pthread_cond_t cond;
+} ThreadData;
+
+extern ThreadData* threadsData;
 extern pthread_t*  threads;
 
 // Barrières
