@@ -409,6 +409,41 @@ int main(void)
         if (IsKeyDown(KEY_KP_0))        ctx.maxBlurRadius  = Clamp(ctx.maxBlurRadius + 1, 1, 20);
         if (IsKeyDown(KEY_KP_1))        ctx.maxBlurRadius  = Clamp(ctx.maxBlurRadius - 1, 1, 20);
 
+        if (IsKeyPressed(KEY_F1)) {
+            static void* savedTexData    = NULL;
+            static void* savedNormalData = NULL;
+
+            cfg.textures_enabled = !cfg.textures_enabled;
+
+            if (!cfg.textures_enabled) {
+                // Sauvegarde et désactivation
+                savedTexData    = ctx.texImage.data;
+                savedNormalData = ctx.normalMap.data;
+                ctx.texImage.data  = NULL;
+                ctx.normalMap.data = NULL;
+            } else {
+                // Restauration
+                ctx.texImage.data  = savedTexData;
+                ctx.normalMap.data = savedNormalData;
+            }
+        }
+
+        if (IsKeyPressed(KEY_F2)) {
+            static void* savedEnvData = NULL;
+
+            ctx.envMap_enable = !ctx.envMap_enable;
+
+            if (!ctx.envMap_enable) {
+                savedEnvData    = ctx.envMap.data;
+                ctx.envMap.data = NULL;
+            } else {
+                ctx.envMap.data = savedEnvData;
+                PrecomputeSkyboxLUT(&ctx);  // recalcul LUT au réactivation
+            }
+        }
+
+        if (IsKeyPressed(KEY_F3)) ctx.dof = !ctx.dof;
+
         // ── Rendu ─────────────────────────────────────────────────────────────
         if (cfg.warnock) {
             DrawText(TextFormat("Warnock + ZBuffer, depth=%d", cfg.tree_depth), 10, 10, 20, WHITE);
@@ -463,9 +498,15 @@ int main(void)
         DrawText(TextFormat("Triangles rejetés: %d", displayRejetes), 10, 120, 20, WHITE);
         DrawText(TextFormat("pos: %.1f %.1f %.1f", camera.position.x, camera.position.y, camera.position.z), 10, 150, 20, WHITE);
         DrawText(TextFormat("Target: %.1f %.1f %.1f", camera.target.x, camera.target.y, camera.target.z),    10, 180, 20, WHITE);
-        if (cfg.dof && cfg.tiles)
+        if (cfg.tiles)
+            DrawText(TextFormat("F1 Textures: %s  F2 EnvMap: %s  F3 DoF: %s",
+                ctx.texImage.data  ? "ON" : "OFF",
+                ctx.envMap.data    ? "ON" : "OFF",
+                ctx.dof            ? "ON" : "OFF"),
+                10, 210, 20, LIGHTGRAY);
+        if (ctx.dof && cfg.tiles)
             DrawText(TextFormat("DoF focal: %.1f  range: %.1f  blur: %d",
-                ctx.focalDistance, ctx.focalRange, ctx.maxBlurRadius), 10, 210, 20, YELLOW);
+                ctx.focalDistance, ctx.focalRange, ctx.maxBlurRadius), 10, 240, 20, YELLOW);
 
         EndDrawing();
     }
