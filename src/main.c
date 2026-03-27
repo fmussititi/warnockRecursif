@@ -136,10 +136,11 @@ int main(void)
 
     
     // ── Smooth normals ────────────────────────────────────────────────────────
-    Vector3* smoothNormals = calloc(vertexCount, sizeof(Vector3));
-    Poly*    PolyList      = malloc(mesh.vertexCount/3 * sizeof(Poly));
-    Poly*    visiblePolys  = malloc(mesh.triangleCount * sizeof(Poly));
-    float*   zbuffer       = NULL;
+    Vector3* smoothNormals    = calloc(vertexCount, sizeof(Vector3));
+    CachedVertex* vertexCache = malloc(mesh.vertexCount * sizeof(CachedVertex));
+    Poly*    PolyList         = malloc(mesh.vertexCount/3 * sizeof(Poly));
+    Poly*    visiblePolys     = malloc(mesh.triangleCount * sizeof(Poly));
+    float*   zbuffer          = NULL;
     Image    img;
     Texture2D tex;
 
@@ -253,42 +254,64 @@ int main(void)
         Matrix vp      = MatrixMultiply(view, proj);
         Frustum frustum = extractFrustum(vp);
 
+        for (int i = 0; i < mesh.vertexCount; i++) {
+            vertexCache[i].isProjected = false;}
+
         // ── Préparation des polygones ─────────────────────────────────────────
         int inc = 0;
         for (int i = 0; i < mesh.triangleCount; i++) {
-            //int i0 = i*3, i1 = i*3+1, i2 = i*3+2;
 
-            // ON RÉCUPÈRE LES INDICES DEPUIS LE BUFFER D'INDICES
-            int i0 = ((unsigned short *)mesh.indices)[i * 3 + 0];
-            int i1 = ((unsigned short *)mesh.indices)[i * 3 + 1];
-            int i2 = ((unsigned short *)mesh.indices)[i * 3 + 2];
+            // 1. Récupération des indices uniques
+            int idx[3];
+            idx[0] = ((unsigned short *)mesh.indices)[i * 3 + 0];
+            idx[1] = ((unsigned short *)mesh.indices)[i * 3 + 1];
+            idx[2] = ((unsigned short *)mesh.indices)[i * 3 + 2];
 
-            Vector3 v0 = Vector3Transform(getVertex(mesh, i0), rotation);
-            Vector3 v1 = Vector3Transform(getVertex(mesh, i1), rotation);
-            Vector3 v2 = Vector3Transform(getVertex(mesh, i2), rotation);
+            CachedVertex* v[3];
 
+            // 2. Vertex Shader (Cache)
+            for (int j = 0; j < 3; j++) {
+                v[j] = &vertexCache[idx[j]];
+                if (!v[j]->isProjected) {
+                    Vector3 rawPos = getVertex(mesh, idx[j]);
+                    v[j]->worldPos  = Vector3Transform(rawPos, rotation);
+                    v[j]->viewPos   = Vector3Transform(v[j]->worldPos, view);
+                    v[j]->screenPos = GetWorldToScreen(v[j]->worldPos, camera);
+                    // On transforme la normale lissée une seule fois
+                    v[j]->normal    = Vector3Normalize(Vector3Transform(smoothNormals[idx[j]], rotation));
+                    v[j]->isProjected = true;
+                }
+            }
+
+            // Raccourcis pour la lisibilité
+            Vector3 v0 = v[0]->worldPos;
+            Vector3 v1 = v[1]->worldPos;
+            Vector3 v2 = v[2]->worldPos;
+
+            // 3. Cullings (utilisent les positions monde du cache)
             if (cfg.backface_culling && isBackFace(v0, v1, v2, ctx.cameraPos)) continue;
 
             if (cfg.frustum_culling) {
                 Vector3 aabbMin = { fminf(v0.x,fminf(v1.x,v2.x)), fminf(v0.y,fminf(v1.y,v2.y)), fminf(v0.z,fminf(v1.z,v2.z)) };
                 Vector3 aabbMax = { fmaxf(v0.x,fmaxf(v1.x,v2.x)), fmaxf(v0.y,fmaxf(v1.y,v2.y)), fmaxf(v0.z,fmaxf(v1.z,v2.z)) };
                 if (!aabbInFrustum(&frustum, aabbMin, aabbMax)) continue;
-                if (!triangleInFrustum(&frustum, v0, v1, v2))  continue;
             }
 
+            // 4. Préparation du polygone visible
             Poly* p = &visiblePolys[inc];
 
-            p->p0 = GetWorldToScreen(v0, camera);
-            p->p1 = GetWorldToScreen(v1, camera);
-            p->p2 = GetWorldToScreen(v2, camera);
+            // On récupère les positions écran et Z directement du cache
+            p->p0 = v[0]->screenPos;
+            p->p1 = v[1]->screenPos;
+            p->p2 = v[2]->screenPos;
 
-            Vector3 cv0 = Vector3Transform(v0, view);
-            Vector3 cv1 = Vector3Transform(v1, view);
-            Vector3 cv2 = Vector3Transform(v2, view);
-            p->z0 = cv0.z; p->z1 = cv1.z; p->z2 = cv2.z;
+            p->z0 = v[0]->viewPos.z; 
+            p->z1 = v[1]->viewPos.z; 
+            p->z2 = v[2]->viewPos.z;
             p->zmin = fminf(p->z0, fminf(p->z1, p->z2));
             p->zmax = fmaxf(p->z0, fmaxf(p->z1, p->z2));
 
+            // Bounding box pour le tiling
             float minX = fminf(p->p0.x, fminf(p->p1.x, p->p2.x));
             float maxX = fmaxf(p->p0.x, fmaxf(p->p1.x, p->p2.x));
             float minY = fminf(p->p0.y, fminf(p->p1.y, p->p2.y));
@@ -301,44 +324,46 @@ int main(void)
 
             if (p->maxX < p->minX || p->maxY < p->minY) continue;
 
+            // Calcul des tuiles
             p->tileMinX = (int)(p->minX) / ctx.tile_size;
             p->tileMaxX = (int)(p->maxX) / ctx.tile_size;
             p->tileMinY = (int)(p->minY) / ctx.tile_size;
             p->tileMaxY = (int)(p->maxY) / ctx.tile_size;
 
-            p->uv0 = getUV(mesh, i0);
-            p->uv1 = getUV(mesh, i1);
-            p->uv2 = getUV(mesh, i2);
+            // UVs (utilisent les index uniques)
+            p->uv0 = getUV(mesh, idx[0]);
+            p->uv1 = getUV(mesh, idx[1]);
+            p->uv2 = getUV(mesh, idx[2]);
 
             p->v0 = v0; p->v1 = v1; p->v2 = v2;
 
-            Vector3 edge1  = Vector3Subtract(v1, v0);
-            Vector3 edge2  = Vector3Subtract(v2, v0);
+            // 5. Normales lissées (Directement du cache !)
+            p->n0 = v[0]->normal;
+            p->n1 = v[1]->normal;
+            p->n2 = v[2]->normal;
+
+            // 6. Tangentes (calculées par triangle car elles dépendent des UVs du triangle)
+            Vector3 edge1 = Vector3Subtract(v1, v0);
+            Vector3 edge2 = Vector3Subtract(v2, v0);
             float duv1x = p->uv1.x-p->uv0.x, duv1y = p->uv1.y-p->uv0.y;
             float duv2x = p->uv2.x-p->uv0.x, duv2y = p->uv2.y-p->uv0.y;
             float denom = duv1x*duv2y - duv2x*duv1y;
 
             if (fabsf(denom) < 1e-6f) {
-                p->tangent   = (Vector3){1,0,0};
+                p->tangent = (Vector3){1,0,0};
                 p->bitangent = (Vector3){0,1,0};
             } else {
                 float f = 1.0f / denom;
-                p->tangent   = Vector3Normalize((Vector3){
+                p->tangent = Vector3Normalize(Vector3Transform((Vector3){
                     f*(duv2y*edge1.x - duv1y*edge2.x),
                     f*(duv2y*edge1.y - duv1y*edge2.y),
-                    f*(duv2y*edge1.z - duv1y*edge2.z)});
-                p->bitangent = Vector3Normalize((Vector3){
+                    f*(duv2y*edge1.z - duv1y*edge2.z)}, rotation)); // Rotation appliquée ici
+                
+                p->bitangent = Vector3Normalize(Vector3Transform((Vector3){
                     f*(-duv2x*edge1.x + duv1x*edge2.x),
                     f*(-duv2x*edge1.y + duv1x*edge2.y),
-                    f*(-duv2x*edge1.z + duv1x*edge2.z)});
+                    f*(-duv2x*edge1.z + duv1x*edge2.z)}, rotation));
             }
-
-            p->n0 = Vector3Normalize(Vector3Transform(getNormal(mesh, i0, smoothNormals), rotation));
-            p->n1 = Vector3Normalize(Vector3Transform(getNormal(mesh, i1, smoothNormals), rotation));
-            p->n2 = Vector3Normalize(Vector3Transform(getNormal(mesh, i2, smoothNormals), rotation));
-
-            p->tangent   = Vector3Normalize(Vector3Transform(p->tangent,   rotation));
-            p->bitangent = Vector3Normalize(Vector3Transform(p->bitangent, rotation));
 
             p->couleur = PolyList[i].couleur;
             if (cfg.zbuffer) gouraudShading(&ctx, p);
@@ -466,11 +491,12 @@ int main(void)
         if (ctx.skyV)       free(ctx.skyV);
     }
 
+    if (cfg.zbuffer)    free(zbuffer);
+    
     free(smoothNormals);
+    free(vertexCache);
     free(PolyList);
     free(visiblePolys);
-
-    if (cfg.zbuffer)    free(zbuffer);
 
     UnloadModel(model);
     if (ctx.texImage.data)  UnloadImage(ctx.texImage);

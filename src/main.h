@@ -78,4 +78,12 @@ typedef struct {
     int max_poly;
 } RenderContext;
 
+typedef struct {
+    Vector3 worldPos;      
+    Vector3 viewPos;       
+    Vector2 screenPos;     
+    Vector3 normal;        // <--- La normale lissée et transformée
+    bool isProjected;      
+} CachedVertex;
+
 #endif // MAIN_H
