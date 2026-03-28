@@ -51,14 +51,6 @@ void drawTile(RenderContext* ctx, int tx, int ty)
     Tile* tile = &tiles[ty * tilesX + tx];
     if (tile->count == 0) return;
 
-    // Reset de la zone du zbuffer global correspondant à cette tile
-    for (int y = y0; y < yEnd; y++) {
-        int fbY = ctx->screenHeight - y;
-        if (fbY < 0 || fbY >= ctx->screenHeight) continue;
-        for (int x = x0; x < x1; x++)
-            zbuffer[fbY * ctx->screenWidth + x] = 1e9f;
-    }
-
     const bool   hasTexture   = ctx->texImage.data   != NULL;
     const bool   hasNormalMap = ctx->normalMap.data  != NULL;
     const bool   hasEnvMap    = ctx->envMap.data     != NULL;
