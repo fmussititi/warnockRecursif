@@ -68,7 +68,9 @@ Mesh OptimizeMesh(Mesh mesh) {
         int foundIndex = -1;
         for (int j = 0; j < uniqueCount; j++) {
             // On compare la position ET l'UV (optionnel mais conseillé pour les textures)
-            if (Vector3Distance(v, uniquePositions[j]) < 0.0001f) {
+            if (Vector3Distance(v, uniquePositions[j]) < 0.0001f &&
+                fabsf(uv.x - uniqueTexCoords[j].x) < 0.0001f &&
+                fabsf(uv.y - uniqueTexCoords[j].y) < 0.0001f) {
                 foundIndex = j;
                 break;
             }
