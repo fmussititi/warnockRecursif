@@ -46,9 +46,6 @@ int main(void)
         framebufferBlur = malloc(cfg.screen_width * cfg.screen_height * sizeof(Color));
         if (!framebufferBlur) { printf("ERREUR: malloc framebufferBlur failed!\n"); return 1; }
 
-        depthBuffer = malloc(cfg.screen_width * cfg.screen_height * sizeof(float));
-        if (!depthBuffer) { printf("ERREUR: malloc depthBuffer failed!\n"); return 1; }
-
         // 1. Calculer le nombre de tuiles nécessaires
         int _tilesX = (cfg.screen_width  + cfg.tile_size - 1) / cfg.tile_size;
         int _tilesY = (cfg.screen_height + cfg.tile_size - 1) / cfg.tile_size;
@@ -89,7 +86,7 @@ int main(void)
         if (!threads) { printf("ERREUR: malloc threads failed!\n"); return 1; }
     }
 
-    if (cfg.zbuffer)
+    if (cfg.zbuffer || cfg.tiles)
         zbuffer = malloc(cfg.screen_width * cfg.screen_height * sizeof(float));
 
     // ── Caméra ────────────────────────────────────────────────────────────────
@@ -540,7 +537,6 @@ int main(void)
 
         free(framebuffer);
         free(framebufferBlur);
-        free(depthBuffer);
 
         free(all_indices);
         free(tiles);
@@ -549,7 +545,7 @@ int main(void)
         if (ctx.skyV) free(ctx.skyV);
     }
 
-    if (cfg.zbuffer) free(zbuffer);
+    if (cfg.zbuffer || cfg.tiles) free(zbuffer);
     
     free(smoothNormals);
     free(tangentsOS);

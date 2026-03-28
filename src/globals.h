@@ -14,7 +14,6 @@ extern atomic_int tilesRemaining;
 // Buffers
 extern Color* framebuffer;
 extern Color* framebufferBlur;
-extern float* depthBuffer;
 extern float* zbuffer;
 
 // Threads

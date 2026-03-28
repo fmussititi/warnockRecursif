@@ -51,9 +51,13 @@ void drawTile(RenderContext* ctx, int tx, int ty)
     Tile* tile = &tiles[ty * tilesX + tx];
     if (tile->count == 0) return;
 
-    float zbuf[ctx->tile_size * ctx->tile_size];
-    for (int i = 0; i < ctx->tile_size * ctx->tile_size; i++)
-        zbuf[i] = 1e9f;
+    // Reset de la zone du zbuffer global correspondant à cette tile
+    for (int y = y0; y < yEnd; y++) {
+        int fbY = ctx->screenHeight - y;
+        if (fbY < 0 || fbY >= ctx->screenHeight) continue;
+        for (int x = x0; x < x1; x++)
+            zbuffer[fbY * ctx->screenWidth + x] = 1e9f;
+    }
 
     const bool   hasTexture   = ctx->texImage.data   != NULL;
     const bool   hasNormalMap = ctx->normalMap.data  != NULL;
@@ -125,12 +129,12 @@ void drawTile(RenderContext* ctx, int tx, int ty)
                         float gamma = 1.0f - alpha - beta;
                         float z     = alpha*tri->z0 + beta*tri->z1 + gamma*tri->z2;
 
-                        int lx    = px - x0;
-                        int ly    = y  - y0;
-                        int index = ly * ctx->tile_size + lx;
+                        // coordonnées écran absolues
+                        int fbY   = ctx->screenHeight - y;
+                        int index = fbY * ctx->screenWidth + px;
 
-                        if (z < zbuf[index]) {
-                            zbuf[index] = z;
+                        if (z < zbuffer[index]) {
+                            zbuffer[index] = z;
 
                             Vector3 n = {
                                 alpha*tri->n0.x + beta*tri->n1.x + gamma*tri->n2.x,
@@ -227,7 +231,6 @@ void drawTile(RenderContext* ctx, int tx, int ty)
                             int fbY = ctx->screenHeight - y;
                             if (fbY >= 0 && fbY < ctx->screenHeight) {
                                 framebuffer[fbY * ctx->screenWidth + px] = final;
-                                depthBuffer[fbY * ctx->screenWidth + px] = z;
                             }
                         }
                     }
@@ -277,12 +280,12 @@ void* worker(void* arg)
             }
         }
 
-        // ── 2. RESET DEPTH BUFFER (distribué sur tous les threads) ───────────
+        // ── 2. RESET ZBUFFER (distribué sur tous les threads) ───────────
         if (td->ctx->dof) {
             for (int y = td->startLine; y < td->endLine; y++) {
                 int row = y * W;
                 for (int x = 0; x < W; x++)
-                    depthBuffer[row + x] = 1e9f;
+                    zbuffer[row + x] = 1e9f;
             }
         }
 
@@ -318,7 +321,7 @@ void* worker(void* arg)
                 }
 
                 for (int x = 0; x < W; x++) {
-                    float depth = depthBuffer[row + x];
+                    float depth = zbuffer[row + x];
                     int radius = (int)(fminf(fabsf(depth - focalDistance) / focalRange, 1.0f) * maxR);
 
                     if (radius <= 0) {
@@ -354,7 +357,7 @@ void* worker(void* arg)
                 }
 
                 for (int y = 0; y < H; y++) {
-                    float depth  = depthBuffer[y * W + x];
+                    float depth  = zbuffer[y * W + x];
                     int   radius = (int)(fminf(fabsf(depth - focalDistance) / focalRange, 1.0f) * maxR);
 
                     if (radius <= 0) continue;
