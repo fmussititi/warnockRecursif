@@ -23,6 +23,8 @@ typedef struct {
     int endTile;
     int startLine;
     int endLine;
+    int startCol;
+    int endCol;
     
 // Pointeurs pour l'allocation dynamique
     int *r_sum;
@@ -41,9 +43,7 @@ extern pthread_t*  threads;
 extern pthread_barrier_t barrierStart;
 extern pthread_barrier_t barrierEnd;
 extern pthread_barrier_t barrierSkyboxDone;
-extern pthread_barrier_t barrierBlurPass1;
 extern pthread_barrier_t barrierDoFPass1;
-extern pthread_barrier_t barrierDoFPass2;
 extern pthread_barrier_t barrierTilesDone;
 
 // Tiles

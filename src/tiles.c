@@ -298,7 +298,7 @@ void* worker(void* arg)
 
         pthread_barrier_wait(&barrierTilesDone);
 
-        // ── 4. DOF OPTIMISÉ (3 PASSES O(1)) ──────────────────────────────────────
+        // ── 4. DOF OPTIMISÉ (2 PASSES O(1)) ──────────────────────────────────────
         if (td->ctx->dof) {
             int   maxR          = td->ctx->maxBlurRadius;
             float focalDistance = td->ctx->focalDistance;
@@ -340,101 +340,34 @@ void* worker(void* arg)
 
             pthread_barrier_wait(&barrierDoFPass1);
 
-            // ── PASS 2 : DIAGONALE +60° (framebufferBlur -> framebuffer) ─────────
-            // On balaie toutes les diagonales de l'écran (W + H possibles)
-            for (int d = -H; d < W; d++) {
-                int count_diag = 0;
+            // ── PASS 2 : VERTICAL (framebufferBlur -> framebuffer) ── O(1) ──────────
+            for (int x = td->startCol; x < td->endCol; x++) {  // ← découper par colonnes !
+
+                // Sommes préfixes verticales sur la colonne
                 int curR = 0, curG = 0, curB = 0;
-
-                // 1. Accumuler TOUTE la diagonale (nécessaire pour éviter les coutures)
-                for (int i = 0; i < H; i++) {
-                    int nx = d + i;
-                    int ny = i;
-                    if (nx >= 0 && nx < W) {
-                        Color c = framebufferBlur[ny * W + nx];
-                        curR += c.r; curG += c.g; curB += c.b;
-                        td->r_sum[count_diag] = curR;
-                        td->g_sum[count_diag] = curG;
-                        td->b_sum[count_diag] = curB;
-                        count_diag++;
-                    }
+                for (int y = 0; y < H; y++) {
+                    Color c = framebufferBlur[y * W + x];
+                    curR += c.r; curG += c.g; curB += c.b;
+                    td->r_sum[y] = curR;
+                    td->g_sum[y] = curG;
+                    td->b_sum[y] = curB;
                 }
-                if (count_diag == 0) continue;
 
-                // 2. Extraire et écrire UNIQUEMENT dans la zone du thread
-                int idx = 0;
-                for (int i = 0; i < H; i++) {
-                    int nx = d + i;
-                    int ny = i;
-                    if (nx >= 0 && nx < W) {
-                        if (ny >= td->startLine && ny < td->endLine) {
-                            float depth = depthBuffer[ny * W + nx];
-                            int radius = (int)(fminf(fabsf(depth - focalDistance) / focalRange, 1.0f) * maxR);
-                            
-                            int x1 = idx - radius - 1;
-                            int x2 = idx + radius;
-                            if (x2 >= count_diag) x2 = count_diag - 1;
-                            int count = x2 - (x1 < 0 ? -1 : x1);
+                for (int y = 0; y < H; y++) {
+                    float depth  = depthBuffer[y * W + x];
+                    int   radius = (int)(fminf(fabsf(depth - focalDistance) / focalRange, 1.0f) * maxR);
 
-                            int r = (x1 < 0) ? td->r_sum[x2] : td->r_sum[x2] - td->r_sum[x1];
-                            int g = (x1 < 0) ? td->g_sum[x2] : td->g_sum[x2] - td->g_sum[x1];
-                            int b = (x1 < 0) ? td->b_sum[x2] : td->b_sum[x2] - td->b_sum[x1];
-                            framebuffer[ny * W + nx] = (Color){ r/count, g/count, b/count, 255 };
-                        }
-                        idx++;
-                    }
+                    if (radius <= 0) continue;
+
+                    int y1    = y - radius - 1;
+                    int y2    = (y + radius < H) ? y + radius : H - 1;
+                    int count = y2 - (y1 < 0 ? -1 : y1);
+
+                    int r = (y1 < 0) ? td->r_sum[y2] : td->r_sum[y2] - td->r_sum[y1];
+                    int g = (y1 < 0) ? td->g_sum[y2] : td->g_sum[y2] - td->g_sum[y1];
+                    int b = (y1 < 0) ? td->b_sum[y2] : td->b_sum[y2] - td->b_sum[y1];
+                    framebuffer[y * W + x] = (Color){ r/count, g/count, b/count, 255 };
                 }
-            }
-
-            pthread_barrier_wait(&barrierDoFPass2);
-
-            // ── PASS 3 : DIAGONALE -60° (framebuffer -> framebufferBlur) ─────────
-            for (int d = 0; d < W + H; d++) {
-                int count_diag = 0;
-                int curR = 0, curG = 0, curB = 0;
-
-                for (int i = 0; i < H; i++) {
-                    int nx = d - i;
-                    int ny = i;
-                    if (nx >= 0 && nx < W) {
-                        Color c = framebuffer[ny * W + nx];
-                        curR += c.r; curG += c.g; curB += c.b;
-                        td->r_sum[count_diag] = curR;
-                        td->g_sum[count_diag] = curG;
-                        td->b_sum[count_diag] = curB;
-                        count_diag++;
-                    }
-                }
-                if (count_diag == 0) continue;
-
-                int idx = 0;
-                for (int i = 0; i < H; i++) {
-                    int nx = d - i;
-                    int ny = i;
-                    if (nx >= 0 && nx < W) {
-                        if (ny >= td->startLine && ny < td->endLine) {
-                            float depth = depthBuffer[ny * W + nx];
-                            int radius = (int)(fminf(fabsf(depth - focalDistance) / focalRange, 1.0f) * maxR);
-
-                            int x1 = idx - radius - 1;
-                            int x2 = idx + radius;
-                            if (x2 >= count_diag) x2 = count_diag - 1;
-                            int count = x2 - (x1 < 0 ? -1 : x1);
-
-                            int r = (x1 < 0) ? td->r_sum[x2] : td->r_sum[x2] - td->r_sum[x1];
-                            int g = (x1 < 0) ? td->g_sum[x2] : td->g_sum[x2] - td->g_sum[x1];
-                            int b = (x1 < 0) ? td->b_sum[x2] : td->b_sum[x2] - td->b_sum[x1];
-                            framebufferBlur[ny * W + nx] = (Color){ r/count, g/count, b/count, 255 };
-                        }
-                        idx++;
-                    }
-                }
-            }
-
-            // Copie finale propre
-            for (int y = td->startLine; y < td->endLine; y++) {
-                if (y >= 0 && y < H)
-                    memcpy(&framebuffer[y * W], &framebufferBlur[y * W], W * sizeof(Color));
             }
         }
         pthread_barrier_wait(&barrierEnd);
@@ -447,15 +380,23 @@ void initThreads(RenderContext* ctx)
     int totalTiles     = tilesX * tilesY;
     int tilesPerThread = (totalTiles + ctx->num_threads - 1) / ctx->num_threads;
     int linesPerThread = ctx->screenHeight / ctx->num_threads;
+    int colsPerThread  = (ctx->screenWidth + ctx->num_threads - 1) / ctx->num_threads;
 
     int max_size = ctx->screenWidth + ctx->screenHeight;
 
     for (int i = 0; i < ctx->num_threads; i++) {
         threadsData[i].ctx       = ctx;
+        
         threadsData[i].startTile = i * tilesPerThread;
         threadsData[i].endTile   = (i == ctx->num_threads-1) ? totalTiles : (i+1)*tilesPerThread;
+
         threadsData[i].startLine = i * linesPerThread;
         threadsData[i].endLine   = (i == ctx->num_threads-1) ? ctx->screenHeight : (i+1)*linesPerThread;
+
+        threadsData[i].startCol = i * colsPerThread;
+        threadsData[i].endCol   = (i == ctx->num_threads-1)
+                                ? ctx->screenWidth
+                                : (i+1) * colsPerThread;
 
         threadsData[i].r_sum = (int*)malloc(max_size * sizeof(int));
         threadsData[i].g_sum = (int*)malloc(max_size * sizeof(int));
@@ -486,7 +427,6 @@ void renderFrame(RenderContext* ctx)
 
     if (ctx->dof) {
         pthread_barrier_wait(&barrierDoFPass1);
-        pthread_barrier_wait(&barrierDoFPass2);
     }
 
     pthread_barrier_wait(&barrierEnd);
