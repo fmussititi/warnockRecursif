@@ -122,8 +122,7 @@ void drawTile(RenderContext* ctx, int tx, int ty)
                         float z     = alpha*tri->z0 + beta*tri->z1 + gamma*tri->z2;
 
                         // coordonnées écran absolues
-                        int fbY   = ctx->screenHeight - y;
-                        int index = fbY * ctx->screenWidth + px;
+                        int index = y * ctx->screenWidth + px;
 
                         if (z < zbuffer[index]) {
                             zbuffer[index] = z;

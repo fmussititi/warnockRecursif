@@ -57,7 +57,7 @@ int main(void)
         }
 
         // Alloue TOUS les indices d'un coup
-        int* all_indices = malloc(cfg.max_tiles * cfg.max_tri_per_tile * sizeof(int));
+        all_indices = malloc(cfg.max_tiles * cfg.max_tri_per_tile * sizeof(int));
         if (!all_indices) { 
             fprintf(stderr, "ERREUR: malloc %d all_indices failed!\n", cfg.max_tiles * cfg.max_tri_per_tile); 
             return 1; 
@@ -326,6 +326,7 @@ int main(void)
                 Vector3 aabbMin = { fminf(v0.x,fminf(v1.x,v2.x)), fminf(v0.y,fminf(v1.y,v2.y)), fminf(v0.z,fminf(v1.z,v2.z)) };
                 Vector3 aabbMax = { fmaxf(v0.x,fmaxf(v1.x,v2.x)), fmaxf(v0.y,fmaxf(v1.y,v2.y)), fmaxf(v0.z,fmaxf(v1.z,v2.z)) };
                 if (!aabbInFrustum(&frustum, aabbMin, aabbMax)) continue;
+                if (!triangleInFrustum(&frustum, v0, v1, v2)) continue;
             }
 
             // 4. Préparation du polygone visible
