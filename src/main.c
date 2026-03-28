@@ -84,6 +84,9 @@ int main(void)
     if (cfg.zbuffer || cfg.tiles)
         zbuffer = malloc(cfg.screen_width * cfg.screen_height * sizeof(float));
 
+    if (cfg.warnock)
+        cfg.backface_culling = 0;
+
     // ── Caméra ────────────────────────────────────────────────────────────────
     Camera3D camera = { 0 };
     camera.position   = (Vector3){ cfg.cam_x,    cfg.cam_y,    cfg.cam_z    };
