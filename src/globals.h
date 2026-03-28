@@ -15,6 +15,7 @@ extern atomic_int tilesRemaining;
 extern Color* framebuffer;
 extern Color* framebufferBlur;
 extern float* depthBuffer;
+extern float* zbuffer;
 
 // Threads
 typedef struct {

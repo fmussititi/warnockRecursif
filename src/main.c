@@ -89,6 +89,9 @@ int main(void)
         if (!threads) { printf("ERREUR: malloc threads failed!\n"); return 1; }
     }
 
+    if (cfg.zbuffer)
+        zbuffer = malloc(cfg.screen_width * cfg.screen_height * sizeof(float));
+
     // ── Caméra ────────────────────────────────────────────────────────────────
     Camera3D camera = { 0 };
     camera.position   = (Vector3){ cfg.cam_x,    cfg.cam_y,    cfg.cam_z    };
@@ -139,8 +142,7 @@ int main(void)
     Vector3* smoothNormals    = calloc(vertexCount, sizeof(Vector3));
     CachedVertex* vertexCache = malloc(mesh.vertexCount * sizeof(CachedVertex));
     Poly*    PolyList         = malloc(mesh.vertexCount/3 * sizeof(Poly));
-    Poly*    visiblePolys     = malloc(mesh.triangleCount * sizeof(Poly));
-    float*   zbuffer          = NULL;
+    Poly*    visiblePolys     = malloc(mesh.triangleCount * sizeof(Poly)); 
     Image    img;
     Texture2D tex;
 
@@ -255,8 +257,6 @@ int main(void)
         initThreads(&ctx);
     }
 
-    if (cfg.zbuffer)
-        zbuffer = malloc(cfg.screen_width * cfg.screen_height * sizeof(float));
 
     // ── Boucle principale ─────────────────────────────────────────────────────
     while (!WindowShouldClose())
@@ -549,7 +549,7 @@ int main(void)
         if (ctx.skyV) free(ctx.skyV);
     }
 
-    if (cfg.zbuffer)    free(zbuffer);
+    if (cfg.zbuffer) free(zbuffer);
     
     free(smoothNormals);
     free(tangentsOS);
