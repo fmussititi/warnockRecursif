@@ -26,6 +26,8 @@ Vector3 getNormal(Mesh mesh, int index, Vector3* smoothNormals);
 Vector3 getVertex(Mesh mesh, int index);
 Vector2 getUV(Mesh mesh, int index);
 int     compare_zmin(const void* a, const void* b);
+int     compare_zmax_desc(const void* a, const void* b);
+void    clear_framebuffer(RenderContext* ctx, Color clearColor);
 Mesh    OptimizeMesh(Mesh mesh);
 
 #endif // UTILS_H

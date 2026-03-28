@@ -10,6 +10,7 @@
 #include "utils.h"
 #include "skybox.h"
 #include "shading.h"
+#include "painter.h"
 #include "warnock.h"
 #include "zbuffer.h"
 #include "tiles.h"
@@ -19,29 +20,34 @@ int main(void)
 {
     Config cfg = loadConfig("config.ini");
 
-    if (cfg.warnock && !cfg.zbuffer && !cfg.tiles)
+    if (cfg.painter && !cfg.warnock && !cfg.zbuffer && !cfg.tiles)
+        InitWindow(cfg.screen_width, cfg.screen_height,
+            TextFormat("painter %dx%d",
+                cfg.screen_width, cfg.screen_height));
+    else
+    if (cfg.warnock && !cfg.painter && !cfg.zbuffer && !cfg.tiles)
         InitWindow(cfg.screen_width, cfg.screen_height,
             TextFormat("Hybride : Warnock + ZBuffer rendering %dx%d",
                 cfg.screen_width, cfg.screen_height));
     else
-    if (cfg.zbuffer && !cfg.warnock && !cfg.tiles)
+    if (cfg.zbuffer && !cfg.painter && !cfg.warnock && !cfg.tiles)
         InitWindow(cfg.screen_width, cfg.screen_height,
             TextFormat("ZBuffer rendering %dx%d",
                 cfg.screen_width, cfg.screen_height));
     else
-    if (cfg.tiles && !cfg.warnock && !cfg.zbuffer)
+    if (cfg.tiles && !cfg.painter && !cfg.warnock && !cfg.zbuffer)
         InitWindow(cfg.screen_width, cfg.screen_height,
             TextFormat("SoftRender3D - Tiles %dx%d - %d threads",
                 cfg.screen_width, cfg.screen_height, cfg.num_threads));
     else return 1;
 
+    framebuffer = malloc(cfg.screen_width * cfg.screen_height * sizeof(Color));
+        if (!framebuffer) { printf("ERREUR: malloc framebuffer failed!\n"); return 1; }
+
     if (cfg.tiles){
 
         tilesX = cfg.screen_width  / cfg.tile_size;
         tilesY = cfg.screen_height / cfg.tile_size;
-
-        framebuffer = malloc(cfg.screen_width * cfg.screen_height * sizeof(Color));
-        if (!framebuffer) { printf("ERREUR: malloc framebuffer failed!\n"); return 1; }
 
         framebufferBlur = malloc(cfg.screen_width * cfg.screen_height * sizeof(Color));
         if (!framebufferBlur) { printf("ERREUR: malloc framebufferBlur failed!\n"); return 1; }
@@ -143,11 +149,15 @@ int main(void)
     Image    img;
     Texture2D tex;
 
+    img = GenImageColor(cfg.screen_width, cfg.screen_height, RAYWHITE);
+    ImageFormat(&img, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);  // ← forcer RGBA
+    tex = LoadTextureFromImage(img);
+    UnloadImage(img);
+
     for (int i = 0; i < mesh.vertexCount / 3; i++) {
         PolyList[i].visible = false;
         PolyList[i].couleur = couleurAleatoire();
     }
-
 
     if (mesh.normals != NULL) {
         // 1. Si c'est une soupe, on optimise
@@ -240,10 +250,6 @@ int main(void)
 
         ctx.skyU = malloc(cfg.screen_width * cfg.screen_height * sizeof(float));
         ctx.skyV = malloc(cfg.screen_width * cfg.screen_height * sizeof(float));
-
-        img = GenImageColor(cfg.screen_width, cfg.screen_height, RAYWHITE);
-        tex = LoadTextureFromImage(img);
-        UnloadImage(img);
 
         pthread_barrier_init(&barrierStart,      NULL, cfg.num_threads + 1);
         pthread_barrier_init(&barrierEnd,        NULL, cfg.num_threads + 1);
@@ -380,7 +386,7 @@ int main(void)
             p->bitangent = Vector3Normalize(Vector3Transform(bitangentsOS[i], rotation));
 
             p->couleur = PolyList[i].couleur;
-            if (cfg.zbuffer) gouraudShading(&ctx, p);
+            if (cfg.painter || cfg.zbuffer) gouraudShading(&ctx, p);
             if (cfg.warnock) flatShading(&ctx, p, view);
 
             p->visible = true;
@@ -459,6 +465,14 @@ int main(void)
         if (IsKeyPressed(KEY_F3)) ctx.dof = !ctx.dof;
 
         // ── Rendu ─────────────────────────────────────────────────────────────
+        if (cfg.painter) {
+            clear_framebuffer(&ctx, (Color){ 20, 20, 30, 255 });            
+            drawPainter(&ctx);
+            UpdateTexture(tex, framebuffer);
+            DrawTexture(tex, 0, 0, WHITE);
+            DrawText(TextFormat("Painter"), 10, 10, 20, WHITE);
+        }
+
         if (cfg.warnock) {
             DrawText(TextFormat("Warnock + ZBuffer, depth=%d", cfg.tree_depth), 10, 10, 20, WHITE);
             Region root = {0, 0, cfg.screen_width, cfg.screen_height};
@@ -468,12 +482,16 @@ int main(void)
             warnock(&ctx, &root, indices, polyCount, 0);
         }
 
-        if (cfg.zbuffer) {
-            DrawText("ZBuffer", 10, 10, 20, WHITE);
+        if (cfg.zbuffer) {            
             for (int i = 0; i < cfg.screen_width * cfg.screen_height; i++)
                 zbuffer[i] = 1e9f;
+            clear_framebuffer(&ctx, (Color){ 20, 20, 30, 255 }); 
             for (int i = 0; i < polyCount; i++)
                 drawTriangleZ(&ctx, &ctx.polys[i], zbuffer);
+
+            UpdateTexture(tex, framebuffer);
+            DrawTexture(tex, 0, 0, WHITE);
+            DrawText("ZBuffer", 10, 10, 20, WHITE);
         }
 
         if (cfg.tiles) {
@@ -535,9 +553,7 @@ int main(void)
         }
         free(threadsData);
 
-        free(framebuffer);
         free(framebufferBlur);
-
         free(all_indices);
         free(tiles);
 
@@ -547,6 +563,7 @@ int main(void)
 
     if (cfg.zbuffer || cfg.tiles) free(zbuffer);
     
+    free(framebuffer);
     free(smoothNormals);
     free(tangentsOS);
     free(bitangentsOS);

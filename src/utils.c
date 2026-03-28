@@ -1,4 +1,5 @@
 #include "utils.h"
+#include "globals.h"
 #include <math.h>
 #include <stdlib.h>
 
@@ -33,6 +34,23 @@ int compare_zmin(const void* a, const void* b) {
     if (p1->zmin < p2->zmin) return -1;
     if (p1->zmin > p2->zmin) return  1;
     return 0;
+}
+
+// Dans utils.h — comparateur inverse (du plus loin au plus proche)
+int compare_zmax_desc(const void* a, const void* b) {
+    Poly* p1 = (Poly*)a;
+    Poly* p2 = (Poly*)b;
+    if (p1->zmin > p2->zmin) return -1;
+    if (p1->zmin < p2->zmin) return  1;
+    return 0;
+}
+
+// Clear framebuffer
+void clear_framebuffer(RenderContext* ctx, Color clearColor) {
+    //Color clearColor = (Color){ 20, 20, 30, 255 };
+    int total = ctx->screenWidth * ctx->screenHeight;
+    for (int i = 0; i < total; i++)
+        framebuffer[i] = clearColor;
 }
 
 // Voici une version simplifiée de ce que tu dois faire :

@@ -1,4 +1,5 @@
 #include "zbuffer.h"
+#include "globals.h"
 #include <math.h>
 
 void drawTriangleZ(RenderContext* ctx, Poly* tri, float* zbuffer)
@@ -33,7 +34,11 @@ void drawTriangleZ(RenderContext* ctx, Poly* tri, float* zbuffer)
                     (unsigned char)(w0*tri->c0.b + w1*tri->c1.b + w2*tri->c2.b),
                     255
                 };
-                DrawPixel(x, ctx->screenHeight - y, final);
+
+                int fbY = ctx->screenHeight - y;
+                if (fbY >= 0 && fbY < ctx->screenHeight)
+                    framebuffer[fbY * ctx->screenWidth + x] = final;
+                //DrawPixel(x, ctx->screenHeight - y, final);
             }
         }
     }

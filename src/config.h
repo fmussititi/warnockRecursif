@@ -5,6 +5,7 @@
 
 typedef struct {
     // Rendu
+    int painter;
     int warnock;
     int zbuffer;
     int tiles;

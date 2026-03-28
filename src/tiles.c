@@ -273,12 +273,10 @@ void* worker(void* arg)
         }
 
         // ── 2. RESET ZBUFFER (distribué sur tous les threads) ───────────
-        if (td->ctx->dof) {
-            for (int y = td->startLine; y < td->endLine; y++) {
-                int row = y * W;
-                for (int x = 0; x < W; x++)
-                    zbuffer[row + x] = 1e9f;
-            }
+        for (int y = td->startLine; y < td->endLine; y++) {
+            int row = y * W;
+            for (int x = 0; x < W; x++)
+                zbuffer[row + x] = 1e9f;
         }
 
         // Synchronisation : skybox + reset depth terminés

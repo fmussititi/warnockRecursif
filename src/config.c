@@ -5,6 +5,7 @@ Config loadConfig(const char* filename)
 {
     // Valeurs par défaut
     Config cfg = {
+        .painter        = 0,
         .warnock        = 0,
         .zbuffer        = 0,
         .tiles          = 1,
@@ -64,6 +65,7 @@ Config loadConfig(const char* filename)
 
         // Parser les clés
         if      (!strcmp(k, "warnock"))           cfg.warnock           = atoi(v);
+        else if (!strcmp(k, "painter"))           cfg.painter           = atoi(v);
         else if (!strcmp(k, "zbuffer"))           cfg.zbuffer           = atoi(v);
         else if (!strcmp(k, "tiles"))             cfg.tiles             = atoi(v);
         else if (!strcmp(k, "screen_width"))      cfg.screen_width      = atoi(v);
