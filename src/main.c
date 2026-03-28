@@ -50,9 +50,9 @@ int main(void)
         if (!depthBuffer) { printf("ERREUR: malloc depthBuffer failed!\n"); return 1; }
 
         // 1. Calculer le nombre de tuiles nécessaires
-        int tilesX = (cfg.screen_width  + cfg.tile_size - 1) / cfg.tile_size;
-        int tilesY = (cfg.screen_height + cfg.tile_size - 1) / cfg.tile_size;
-        int total_tiles = tilesX * tilesY;
+        int _tilesX = (cfg.screen_width  + cfg.tile_size - 1) / cfg.tile_size;
+        int _tilesY = (cfg.screen_height + cfg.tile_size - 1) / cfg.tile_size;
+        int total_tiles = _tilesX * _tilesY;
 
         // 2. Mettre à jour la config pour que le reste du code soit cohérent
         cfg.max_tiles = total_tiles; 
@@ -180,6 +180,45 @@ int main(void)
         }
         printf("Succès : %d normales lissées extraites.\n", mesh.vertexCount);
     }
+
+    // ── Précalcul tangentes/bitangentes en espace objet ──────────────────────
+    Vector3* tangentsOS   = malloc(mesh.triangleCount * sizeof(Vector3));
+    Vector3* bitangentsOS = malloc(mesh.triangleCount * sizeof(Vector3));
+
+    for (int i = 0; i < mesh.triangleCount; i++) {
+        int idx0 = ((unsigned short*)mesh.indices)[i*3+0];
+        int idx1 = ((unsigned short*)mesh.indices)[i*3+1];
+        int idx2 = ((unsigned short*)mesh.indices)[i*3+2];
+
+        Vector3 v0 = getVertex(mesh, idx0);
+        Vector3 v1 = getVertex(mesh, idx1);
+        Vector3 v2 = getVertex(mesh, idx2);
+        Vector2 uv0 = getUV(mesh, idx0);
+        Vector2 uv1 = getUV(mesh, idx1);
+        Vector2 uv2 = getUV(mesh, idx2);
+
+        Vector3 edge1  = Vector3Subtract(v1, v0);
+        Vector3 edge2  = Vector3Subtract(v2, v0);
+        float duv1x = uv1.x-uv0.x, duv1y = uv1.y-uv0.y;
+        float duv2x = uv2.x-uv0.x, duv2y = uv2.y-uv0.y;
+        float denom = duv1x*duv2y - duv2x*duv1y;
+
+        if (fabsf(denom) < 1e-6f) {
+            tangentsOS[i]   = (Vector3){1, 0, 0};
+            bitangentsOS[i] = (Vector3){0, 1, 0};
+        } else {
+            float f = 1.0f / denom;
+            tangentsOS[i] = Vector3Normalize((Vector3){
+                f*(duv2y*edge1.x - duv1y*edge2.x),
+                f*(duv2y*edge1.y - duv1y*edge2.y),
+                f*(duv2y*edge1.z - duv1y*edge2.z)});
+            bitangentsOS[i] = Vector3Normalize((Vector3){
+                f*(-duv2x*edge1.x + duv1x*edge2.x),
+                f*(-duv2x*edge1.y + duv1x*edge2.y),
+                f*(-duv2x*edge1.z + duv1x*edge2.z)});
+        }
+    }
+    printf("Tangentes précalculées : %d triangles\n", mesh.triangleCount);
 
 
     if (cfg.tiles){
@@ -342,28 +381,8 @@ int main(void)
             p->n1 = v[1]->normal;
             p->n2 = v[2]->normal;
 
-            // 6. Tangentes (calculées par triangle car elles dépendent des UVs du triangle)
-            Vector3 edge1 = Vector3Subtract(v1, v0);
-            Vector3 edge2 = Vector3Subtract(v2, v0);
-            float duv1x = p->uv1.x-p->uv0.x, duv1y = p->uv1.y-p->uv0.y;
-            float duv2x = p->uv2.x-p->uv0.x, duv2y = p->uv2.y-p->uv0.y;
-            float denom = duv1x*duv2y - duv2x*duv1y;
-
-            if (fabsf(denom) < 1e-6f) {
-                p->tangent = (Vector3){1,0,0};
-                p->bitangent = (Vector3){0,1,0};
-            } else {
-                float f = 1.0f / denom;
-                p->tangent = Vector3Normalize(Vector3Transform((Vector3){
-                    f*(duv2y*edge1.x - duv1y*edge2.x),
-                    f*(duv2y*edge1.y - duv1y*edge2.y),
-                    f*(duv2y*edge1.z - duv1y*edge2.z)}, rotation)); // Rotation appliquée ici
-                
-                p->bitangent = Vector3Normalize(Vector3Transform((Vector3){
-                    f*(-duv2x*edge1.x + duv1x*edge2.x),
-                    f*(-duv2x*edge1.y + duv1x*edge2.y),
-                    f*(-duv2x*edge1.z + duv1x*edge2.z)}, rotation));
-            }
+            p->tangent   = Vector3Normalize(Vector3Transform(tangentsOS[i],   rotation));
+            p->bitangent = Vector3Normalize(Vector3Transform(bitangentsOS[i], rotation));
 
             p->couleur = PolyList[i].couleur;
             if (cfg.zbuffer) gouraudShading(&ctx, p);
@@ -528,13 +547,15 @@ int main(void)
         free(all_indices);
         free(tiles);
 
-        if (ctx.skyU)       free(ctx.skyU);
-        if (ctx.skyV)       free(ctx.skyV);
+        if (ctx.skyU) free(ctx.skyU);
+        if (ctx.skyV) free(ctx.skyV);
     }
 
     if (cfg.zbuffer)    free(zbuffer);
     
     free(smoothNormals);
+    free(tangentsOS);
+    free(bitangentsOS);
     free(vertexCache);
     free(PolyList);
     free(visiblePolys);
