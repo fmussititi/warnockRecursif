@@ -28,6 +28,9 @@ Vector2 getUV(Mesh mesh, int index);
 int     compare_zmin(const void* a, const void* b);
 int     compare_zmax_desc(const void* a, const void* b);
 void    clear_framebuffer(RenderContext* ctx, Color clearColor);
+void    DrawRectangleFramebuffer(RenderContext* ctx, int left, int top, int width, int height, Color color);
+void    DrawRectangleLinesFramebuffer(RenderContext* ctx, int left, int top, int width, int height, Color color);
+void    DrawTriangleFramebuffer(RenderContext* ctx, Poly* tri, Color color);
 Mesh    OptimizeMesh(Mesh mesh);
 
 #endif // UTILS_H

@@ -1,4 +1,5 @@
 #include "warnock.h"
+#include "utils.h"
 #include <math.h>
 #include <stdbool.h>
 
@@ -127,7 +128,8 @@ void drawRegionZBuffer(RenderContext* ctx, Region* r, Poly* polys, int* indices,
 
                     if (z < zbuf[index]) {
                         zbuf[index] = z;
-                        DrawRectangle(x, ctx->screenHeight - y, width+1, height+1, tri->couleur);
+                        //DrawRectangle(x, ctx->screenHeight - y, width+1, height+1, tri->couleur);
+                        DrawRectangleFramebuffer(ctx, x, ctx->screenHeight - y, width+1, height+1, tri->couleur);
                     }
                 }
                 w0 += e0.A; w1 += e1.A; w2 += e2.A;
@@ -202,19 +204,22 @@ void warnock(RenderContext* ctx, Region* r, int* indices, int count, int depth)
     }
 
     if (localCount == 0) {
-        if (ctx->tree_depth) DrawRectangleLines(left, top, width, height, RED);
+        //if (ctx->tree_depth) DrawRectangleLines(left, top, width, height, RED);
+        if (ctx->tree_depth) DrawRectangleLinesFramebuffer(ctx, left, top, width, height, RED);
         return;
     }
 
     if (localCount == 1) {
-        DrawRectangle(left, top, width, height, ctx->polys[localIndices[0]].couleur);
+        //DrawRectangle(left, top, width, height, ctx->polys[localIndices[0]].couleur);
+        DrawRectangleFramebuffer(ctx, left, top, width, height, ctx->polys[localIndices[0]].couleur);
         return;
     }
 
     for (int i = 0; i < localCount; i++) {
         Poly* A = &ctx->polys[localIndices[i]];
         if (region_fully_covered(r, A) && isFrontMost(A, ctx->polys, localIndices, localCount)) {
-            DrawRectangle(left, top, width, height, A->couleur);
+            //DrawRectangle(left, top, width, height, A->couleur);
+            DrawRectangleFramebuffer(ctx, left, top, width, height, A->couleur);
             return;
         }
     }

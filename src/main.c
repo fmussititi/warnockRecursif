@@ -20,26 +20,15 @@ int main(void)
 {
     Config cfg = loadConfig("config.ini");
 
-    if (cfg.painter && !cfg.warnock && !cfg.zbuffer && !cfg.tiles)
-        InitWindow(cfg.screen_width, cfg.screen_height,
-            TextFormat("painter %dx%d",
-                cfg.screen_width, cfg.screen_height));
-    else
-    if (cfg.warnock && !cfg.painter && !cfg.zbuffer && !cfg.tiles)
-        InitWindow(cfg.screen_width, cfg.screen_height,
-            TextFormat("Hybride : Warnock + ZBuffer rendering %dx%d",
-                cfg.screen_width, cfg.screen_height));
-    else
-    if (cfg.zbuffer && !cfg.painter && !cfg.warnock && !cfg.tiles)
-        InitWindow(cfg.screen_width, cfg.screen_height,
-            TextFormat("ZBuffer rendering %dx%d",
-                cfg.screen_width, cfg.screen_height));
-    else
-    if (cfg.tiles && !cfg.painter && !cfg.warnock && !cfg.zbuffer)
-        InitWindow(cfg.screen_width, cfg.screen_height,
-            TextFormat("SoftRender3D - Tiles %dx%d - %d threads",
-                cfg.screen_width, cfg.screen_height, cfg.num_threads));
+    const char* mode = "Unknown";
+    if      (cfg.painter) mode = "Painter";
+    else if (cfg.warnock) mode = "Warnock + ZBuffer";
+    else if (cfg.zbuffer) mode = "ZBuffer";
+    else if (cfg.tiles)   mode = TextFormat("Tiles - %d threads", cfg.num_threads);
     else return 1;
+
+    InitWindow(cfg.screen_width, cfg.screen_height,
+        TextFormat("SoftRender3D - %s %dx%d", mode, cfg.screen_width, cfg.screen_height));
 
     framebuffer = malloc(cfg.screen_width * cfg.screen_height * sizeof(Color));
         if (!framebuffer) { printf("ERREUR: malloc framebuffer failed!\n"); return 1; }
@@ -139,6 +128,8 @@ int main(void)
     ctx.maxBlurRadius = cfg.maxBlurRadius;
     ctx.focalDistance = cfg.focalDistance;
     ctx.focalRange    = cfg.focalRange;
+    ctx.flatShading   = cfg.flatShading;
+    ctx.gouraudShading= cfg.gouraudShading;
 
     
     // ── Smooth normals ────────────────────────────────────────────────────────
@@ -385,9 +376,12 @@ int main(void)
             p->tangent   = Vector3Normalize(Vector3Transform(tangentsOS[i],   rotation));
             p->bitangent = Vector3Normalize(Vector3Transform(bitangentsOS[i], rotation));
 
-            p->couleur = PolyList[i].couleur;
-            if (cfg.painter || cfg.zbuffer) gouraudShading(&ctx, p);
+            p->couleur = PolyList[i].couleur;           
             if (cfg.warnock) flatShading(&ctx, p, view);
+            if (cfg.painter || cfg.zbuffer){
+                if (cfg.gouraudShading)   gouraudShading(&ctx, p);
+                else if (cfg.flatShading) flatShading(&ctx, p, view);
+            }
 
             p->visible = true;
             inc++;
@@ -474,12 +468,16 @@ int main(void)
         }
 
         if (cfg.warnock) {
-            DrawText(TextFormat("Warnock + ZBuffer, depth=%d", cfg.tree_depth), 10, 10, 20, WHITE);
             Region root = {0, 0, cfg.screen_width, cfg.screen_height};
             int indices[cfg.max_poly];
             for (int i = 0; i < polyCount; i++) indices[i] = i;
             ctx.rootIndices = indices;
+
+            clear_framebuffer(&ctx, (Color){ 20, 20, 30, 255 }); 
             warnock(&ctx, &root, indices, polyCount, 0);
+            UpdateTexture(tex, framebuffer);
+            DrawTexture(tex, 0, 0, WHITE);
+            DrawText(TextFormat("Warnock + ZBuffer, depth=%d", cfg.tree_depth), 10, 10, 20, WHITE);
         }
 
         if (cfg.zbuffer) {            

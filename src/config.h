@@ -31,6 +31,9 @@ typedef struct {
     float ambient, diffuse, specular, shininess;
     float refl1, refl2;
 
+    // Shading
+    int gouraudShading, flatShading;
+
     // Textures
     int textures_enabled;
     char tex_diffuse[256];

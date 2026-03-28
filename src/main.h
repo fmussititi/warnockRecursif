@@ -72,6 +72,9 @@ typedef struct {
     int screenWidth;
     int screenHeight;
 
+    int gouraudShading;
+    int flatShading;
+
     int* rootIndices;
     int tree_depth;
     int contour_arbre;

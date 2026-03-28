@@ -28,12 +28,16 @@ void drawTriangleZ(RenderContext* ctx, Poly* tri, float* zbuffer)
             int index = y * ctx->screenWidth + x;
             if (z < zbuffer[index]) {
                 zbuffer[index] = z;
-                Color final = {
-                    (unsigned char)(w0*tri->c0.r + w1*tri->c1.r + w2*tri->c2.r),
-                    (unsigned char)(w0*tri->c0.g + w1*tri->c1.g + w2*tri->c2.g),
-                    (unsigned char)(w0*tri->c0.b + w1*tri->c1.b + w2*tri->c2.b),
-                    255
-                };
+
+                Color final;
+                if (ctx->gouraudShading)
+                    final = (Color){
+                        (unsigned char)(w0*tri->c0.r + w1*tri->c1.r + w2*tri->c2.r),
+                        (unsigned char)(w0*tri->c0.g + w1*tri->c1.g + w2*tri->c2.g),
+                        (unsigned char)(w0*tri->c0.b + w1*tri->c1.b + w2*tri->c2.b),
+                        255
+                    };
+                else final = tri->couleur;
 
                 int fbY = ctx->screenHeight - y;
                 if (fbY >= 0 && fbY < ctx->screenHeight)
