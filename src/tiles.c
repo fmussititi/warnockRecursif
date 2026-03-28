@@ -296,49 +296,50 @@ void* worker(void* arg)
             float focalDistance = td->ctx->focalDistance;
             float focalRange    = td->ctx->focalRange;
 
-            // ── PASS 1 : HORIZONTAL (framebuffer -> framebufferBlur) ──────────────
+            // ── PASS 1 : HORIZONTAL ──────────────────────────────────────────────────
             for (int y = td->startLine; y < td->endLine; y++) {
                 if (y < 0 || y >= H) continue;
-                int row = y * W;
+                
+                int screenY = H - 1 - y;           // ← coordonnée écran
+                int rowFB   = screenY * W;         // ← index framebuffer (écran)
+                int rowZ    = y * W;               // ← index zbuffer (monde)
 
-                // Accumulation locale à la ligne
                 int curR = 0, curG = 0, curB = 0;
                 for (int x = 0; x < W; x++) {
-                    Color c = framebuffer[row + x];
+                    Color c = framebuffer[rowFB + x];  // ← lit en coordonnées écran
                     curR += c.r; curG += c.g; curB += c.b;
                     td->r_sum[x] = curR; td->g_sum[x] = curG; td->b_sum[x] = curB;
                 }
 
                 for (int x = 0; x < W; x++) {
-                    float depth = zbuffer[row + x];
+                    float depth = zbuffer[rowZ + x];   // ← lit en coordonnées monde
                     int radius = (int)(fminf(fabsf(depth - focalDistance) / focalRange, 1.0f) * maxR);
 
                     if (radius <= 0) {
-                        framebufferBlur[row + x] = framebuffer[row + x];
+                        framebufferBlur[rowFB + x] = framebuffer[rowFB + x];
                         continue;
                     }
 
                     int x1 = x - radius - 1;
-                    int x2 = x + radius;
-                    if (x2 >= W) x2 = W - 1;
+                    int x2 = (x + radius < W) ? x + radius : W - 1;
                     int count = x2 - (x1 < 0 ? -1 : x1);
 
                     int r = (x1 < 0) ? td->r_sum[x2] : td->r_sum[x2] - td->r_sum[x1];
                     int g = (x1 < 0) ? td->g_sum[x2] : td->g_sum[x2] - td->g_sum[x1];
                     int b = (x1 < 0) ? td->b_sum[x2] : td->b_sum[x2] - td->b_sum[x1];
-                    framebufferBlur[row + x] = (Color){ r/count, g/count, b/count, 255 };
+                    framebufferBlur[rowFB + x] = (Color){ r/count, g/count, b/count, 255 };
                 }
             }
 
             pthread_barrier_wait(&barrierDoFPass1);
 
-            // ── PASS 2 : VERTICAL (framebufferBlur -> framebuffer) ── O(1) ──────────
-            for (int x = td->startCol; x < td->endCol; x++) {  // ← découper par colonnes !
+            // ── PASS 2 : VERTICAL ────────────────────────────────────────────────────
+            for (int x = td->startCol; x < td->endCol; x++) {
 
-                // Sommes préfixes verticales sur la colonne
                 int curR = 0, curG = 0, curB = 0;
                 for (int y = 0; y < H; y++) {
-                    Color c = framebufferBlur[y * W + x];
+                    int screenY = H - 1 - y;
+                    Color c = framebufferBlur[screenY * W + x];  // ← coordonnées écran
                     curR += c.r; curG += c.g; curB += c.b;
                     td->r_sum[y] = curR;
                     td->g_sum[y] = curG;
@@ -346,8 +347,9 @@ void* worker(void* arg)
                 }
 
                 for (int y = 0; y < H; y++) {
-                    float depth  = zbuffer[y * W + x];
-                    int   radius = (int)(fminf(fabsf(depth - focalDistance) / focalRange, 1.0f) * maxR);
+                    int screenY = H - 1 - y;
+                    float depth = zbuffer[y * W + x];            // ← coordonnées monde
+                    int radius = (int)(fminf(fabsf(depth - focalDistance) / focalRange, 1.0f) * maxR);
 
                     if (radius <= 0) continue;
 
@@ -358,7 +360,7 @@ void* worker(void* arg)
                     int r = (y1 < 0) ? td->r_sum[y2] : td->r_sum[y2] - td->r_sum[y1];
                     int g = (y1 < 0) ? td->g_sum[y2] : td->g_sum[y2] - td->g_sum[y1];
                     int b = (y1 < 0) ? td->b_sum[y2] : td->b_sum[y2] - td->b_sum[y1];
-                    framebuffer[y * W + x] = (Color){ r/count, g/count, b/count, 255 };
+                    framebuffer[screenY * W + x] = (Color){ r/count, g/count, b/count, 255 };  // ← écran
                 }
             }
         }
