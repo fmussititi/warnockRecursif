@@ -22,7 +22,7 @@ int main(void)
 
     const char* mode = "Unknown";
     if      (cfg.painter) mode = "Painter";
-    else if (cfg.warnock) mode = "Warnock + ZBuffer";
+    else if (cfg.warnock) mode = "Warnock";
     else if (cfg.zbuffer) mode = "ZBuffer";
     else if (cfg.tiles)   mode = TextFormat("Tiles - %d threads", cfg.num_threads);
     else return 1;
@@ -110,6 +110,7 @@ int main(void)
     ctx.tree_depth    = cfg.tree_depth;
     ctx.contour_arbre = cfg.contour_arbre;
     ctx.max_poly      = cfg.max_poly;
+    ctx.hybride       = cfg.hybride;
     ctx.ambient       = cfg.ambient;
     ctx.diffuse       = cfg.diffuse;
     ctx.shininess     = cfg.shininess;
@@ -378,7 +379,9 @@ int main(void)
             p->bitangent = Vector3Normalize(Vector3Transform(bitangentsOS[i], rotation));
 
             p->couleur = PolyList[i].couleur;           
-            if (cfg.warnock) flatShading(&ctx, p, view);
+            if (cfg.warnock){ 
+                if (cfg.flatShading) flatShading(&ctx, p, view);
+            }
             if (cfg.painter || cfg.zbuffer){
                 if (cfg.gouraudShading)   gouraudShading(&ctx, p);
                 else if (cfg.flatShading) flatShading(&ctx, p, view);
@@ -478,7 +481,7 @@ int main(void)
             warnock(&ctx, &root, indices, polyCount, 0);
             UpdateTexture(tex, framebuffer);
             DrawTexture(tex, 0, 0, WHITE);
-            DrawText(TextFormat("Warnock + ZBuffer, depth=%d", cfg.tree_depth), 10, 10, 20, WHITE);
+            DrawText(TextFormat("Warnock, depth=%d", cfg.tree_depth), 10, 10, 20, WHITE);
         }
 
         if (cfg.zbuffer) {            

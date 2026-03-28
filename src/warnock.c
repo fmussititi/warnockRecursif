@@ -184,7 +184,20 @@ void warnock(RenderContext* ctx, Region* r, int* indices, int count, int depth)
     int height = r->y2 - r->y1;
 
     if (depth >= ctx->tree_depth) {
-        drawRegionZBuffer(ctx, r, ctx->polys, indices, count);
+        int best = 0;
+        float z = ctx->polys[indices[0]].zmin;
+
+        for (int i = 1; i < count; i++)
+        {
+            if (ctx->polys[indices[i]].zmin < z){
+                z = ctx->polys[indices[i]].zmin;
+                best = i;
+            }
+        }
+        if(ctx->hybride)
+            drawRegionZBuffer(ctx, r, ctx->polys, indices, count);
+        else
+            DrawRectangleFramebuffer(ctx, left, top, width, height, ctx->polys[indices[best]].couleur);
         return;
     }
 

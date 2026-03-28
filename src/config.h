@@ -59,6 +59,7 @@ typedef struct {
     int tree_depth;
     int contour_arbre;
     int max_poly;
+    int hybride;
 
 } Config;
 

@@ -38,6 +38,7 @@ Config loadConfig(const char* filename)
         .tree_depth     = 10,
         .contour_arbre  = 1,
         .max_poly       = 10000,
+        .hybride        = 0,
         .gouraudShading = 1,
         .flatShading    = 0
     };
@@ -110,6 +111,7 @@ Config loadConfig(const char* filename)
         else if (!strcmp(k, "tree_depth"))        cfg.tree_depth        = atoi(v);
         else if (!strcmp(k, "contour_arbre"))     cfg.contour_arbre     = atoi(v);
         else if (!strcmp(k, "max_poly"))          cfg.max_poly          = atoi(v);
+        else if (!strcmp(k, "hybride"))           cfg.hybride           = atoi(v);
         else if (!strcmp(k, "flat"))              cfg.flatShading       = atoi(v);
         else if (!strcmp(k, "gouraud"))           cfg.gouraudShading    = atoi(v);
     }
