@@ -1,12 +1,13 @@
 #include "warnock.h"
 #include "utils.h"
+#include "globals.h"
 #include <math.h>
 #include <stdbool.h>
 
 void subdivise(Region* r, Region regions[4]) {
-    regions[0] = (Region){r->x1,              (r->y1+r->y2)/2, (r->x1+r->x2)/2, r->y2};
+    regions[0] = (Region){r->x1,             (r->y1+r->y2)/2, (r->x1+r->x2)/2, r->y2};
     regions[1] = (Region){(r->x1+r->x2)/2,   (r->y1+r->y2)/2, r->x2,           r->y2};
-    regions[2] = (Region){r->x1,              r->y1,           (r->x1+r->x2)/2, (r->y1+r->y2)/2};
+    regions[2] = (Region){r->x1,             r->y1,           (r->x1+r->x2)/2, (r->y1+r->y2)/2};
     regions[3] = (Region){(r->x1+r->x2)/2,   r->y1,           r->x2,           (r->y1+r->y2)/2};
 }
 
@@ -87,7 +88,7 @@ void drawRegionZBuffer(RenderContext* ctx, Region* r, Poly* polys, int* indices,
     int width  = r->x2 - r->x1;
     int height = r->y2 - r->y1;
 
-    float zbuf[ctx->tile_size * ctx->tile_size];
+    float zbuf[width * height];
     for (int i = 0; i < width * height; i++)
         zbuf[i] = 1e9f;
 
@@ -113,9 +114,11 @@ void drawRegionZBuffer(RenderContext* ctx, Region* r, Poly* polys, int* indices,
         float w1_row = evalEdge(e1, minX+0.5f, minY+0.5f);
         float w2_row = evalEdge(e2, minX+0.5f, minY+0.5f);
 
-        for (int y = minY; y <= maxY; y += height) {
+        //for (int y = minY; y <= maxY; y += height) {
+        for (int y = minY; y <= maxY; y++) {
             float w0 = w0_row, w1 = w1_row, w2 = w2_row;
-            for (int x = minX; x <= maxX; x += width) {
+            //for (int x = minX; x <= maxX; x += width) {
+            for (int x = minX; x <= maxX; x++) {
                 if (w0 >= 0 && w1 >= 0 && w2 >= 0) {
                     float alpha = w1 * invArea;
                     float beta  = w2 * invArea;
@@ -129,7 +132,10 @@ void drawRegionZBuffer(RenderContext* ctx, Region* r, Poly* polys, int* indices,
                     if (z < zbuf[index]) {
                         zbuf[index] = z;
                         //DrawRectangle(x, ctx->screenHeight - y, width+1, height+1, tri->couleur);
-                        DrawRectangleFramebuffer(ctx, x, ctx->screenHeight - y, width+1, height+1, tri->couleur);
+                        //DrawRectangleFramebuffer(ctx, x, ctx->screenHeight - y, width, height, tri->couleur);
+                        int fbY = ctx->screenHeight - y;
+                        if (fbY >= 0 && fbY < ctx->screenHeight)
+                            framebuffer[fbY * ctx->screenWidth + x] = tri->couleur; 
                     }
                 }
                 w0 += e0.A; w1 += e1.A; w2 += e2.A;
@@ -226,9 +232,14 @@ void warnock(RenderContext* ctx, Region* r, int* indices, int count, int depth)
     }
 
     if (localCount == 1) {
-        //DrawRectangle(left, top, width, height, ctx->polys[localIndices[0]].couleur);
-        //DrawRectangleFramebuffer(ctx, left, top, width, height, ctx->polys[localIndices[0]].couleur);
-        //return;
+        Poly* A = &ctx->polys[localIndices[0]];
+        // Le triangle couvre tout le rectangle → on peut remplir
+        if (region_fully_covered(r, A)) {            
+            DrawRectangleFramebuffer(ctx, left, top, width, height, A->couleur);
+            //DrawRectangle(left, top, width, height, A->couleur);
+            return;
+        }        
+        // Le triangle ne couvre qu'une partie → on subdivise
     }
 
     for (int i = 0; i < localCount; i++) {
