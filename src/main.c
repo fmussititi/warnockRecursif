@@ -92,13 +92,6 @@ int main(void)
     camera.fovy       = cfg.fov;
     camera.projection = CAMERA_PERSPECTIVE;
 
-    Model model      = LoadModel(cfg.model_path);
-    Mesh  mesh       = model.meshes[0];
-    int   vertexCount = mesh.vertexCount;
-
-    float rotX = 0.0f, rotY = 0.0f, rotZ = 0.0f;
-    SetTargetFPS(60);
-
     // ── RenderContext ─────────────────────────────────────────────────────────
     RenderContext ctx;
     memset(&ctx, 0, sizeof(RenderContext));
@@ -133,23 +126,11 @@ int main(void)
     ctx.gouraudShading= cfg.gouraudShading;
 
     
-    // ── Smooth normals ────────────────────────────────────────────────────────
-    Vector3* smoothNormals    = calloc(vertexCount, sizeof(Vector3));
-    CachedVertex* vertexCache = malloc(mesh.vertexCount * sizeof(CachedVertex));
-    Poly*    PolyList         = malloc(mesh.vertexCount/3 * sizeof(Poly));
-    Poly*    visiblePolys     = malloc(mesh.triangleCount * sizeof(Poly)); 
-    Image    img;
-    Texture2D tex;
+    Model model      = LoadModel(cfg.model_path);
+    Mesh  mesh       = model.meshes[0];
+    //int   vertexCount = mesh.vertexCount;
 
-    img = GenImageColor(cfg.screen_width, cfg.screen_height, RAYWHITE);
-    ImageFormat(&img, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);  // ← forcer RGBA
-    tex = LoadTextureFromImage(img);
-    UnloadImage(img);
-
-    for (int i = 0; i < mesh.vertexCount / 3; i++) {
-        PolyList[i].visible = false;
-        PolyList[i].couleur = couleurAleatoire();
-    }
+    Vector3* smoothNormals = NULL;
 
     if (mesh.normals != NULL) {
         // 1. Si c'est une soupe, on optimise
@@ -170,7 +151,8 @@ int main(void)
 
         // 2. Maintenant on peut allouer et remplir smoothNormals
         // Attention : utilise le NOUVEAU vertexCount (qui est plus petit)
-        smoothNormals = realloc(smoothNormals, mesh.vertexCount * sizeof(Vector3));
+        //smoothNormals = realloc(smoothNormals, mesh.vertexCount * sizeof(Vector3));
+        smoothNormals = calloc(mesh.vertexCount, sizeof(Vector3));
 
         for (int i = 0; i < mesh.vertexCount; i++) {
             smoothNormals[i] = (Vector3){
@@ -181,6 +163,27 @@ int main(void)
         }
         printf("Succès : %d normales lissées extraites.\n", mesh.vertexCount);
     }
+
+    float rotX = 0.0f, rotY = 0.0f, rotZ = 0.0f;
+    SetTargetFPS(60);
+
+    // ── Smooth normals ────────────────────────────────────────────────────────
+    //Vector3* smoothNormals    = calloc(mesh.vertexCount, sizeof(Vector3));
+    CachedVertex* vertexCache = malloc(mesh.vertexCount * sizeof(CachedVertex));
+    Poly*    PolyList         = malloc(mesh.triangleCount * sizeof(Poly));
+    Poly*    visiblePolys     = malloc(mesh.triangleCount * sizeof(Poly)); 
+    Image    img;
+    Texture2D tex;
+
+    img = GenImageColor(cfg.screen_width, cfg.screen_height, RAYWHITE);
+    ImageFormat(&img, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);  // ← forcer RGBA
+    tex = LoadTextureFromImage(img);
+    UnloadImage(img);
+
+    for (int i = 0; i < mesh.vertexCount / 3; i++) {
+        PolyList[i].visible = false;
+        PolyList[i].couleur = couleurAleatoire();
+    } 
 
     // ── Précalcul tangentes/bitangentes en espace objet ──────────────────────
     Vector3* tangentsOS   = malloc(mesh.triangleCount * sizeof(Vector3));
