@@ -82,10 +82,7 @@ int main(void)
     }
 
     if (cfg.zbuffer || cfg.tiles)
-        zbuffer = malloc(cfg.screen_width * cfg.screen_height * sizeof(float));
-
-    if (cfg.warnock)
-        cfg.backface_culling = 0;
+        zbuffer = malloc(cfg.screen_width * cfg.screen_height * sizeof(float));        
 
     // ── Caméra ────────────────────────────────────────────────────────────────
     Camera3D camera = { 0 };
@@ -427,8 +424,8 @@ int main(void)
         if (IsKeyDown(KEY_KP_SUBTRACT)) ctx.focalDistance += 0.1f;
         if (IsKeyDown(KEY_KP_MULTIPLY)) ctx.focalRange    += 0.1f;
         if (IsKeyDown(KEY_KP_DIVIDE))   ctx.focalRange     = fmaxf(0.1f, ctx.focalRange - 0.1f);
-        if (IsKeyDown(KEY_KP_0))        ctx.maxBlurRadius  = Clamp(ctx.maxBlurRadius + 1, 1, 20);
-        if (IsKeyDown(KEY_KP_1))        ctx.maxBlurRadius  = Clamp(ctx.maxBlurRadius - 1, 1, 20);
+        if (IsKeyDown(KEY_KP_0))        ctx.maxBlurRadius  = Clamp(ctx.maxBlurRadius + 1, 1, 40);
+        if (IsKeyDown(KEY_KP_1))        ctx.maxBlurRadius  = Clamp(ctx.maxBlurRadius - 1, 1, 40);
 
         if (IsKeyPressed(KEY_F1)) {
             static void* savedTexData    = NULL;
@@ -475,6 +472,7 @@ int main(void)
         }
 
         if (cfg.warnock) {
+            //cfg.backface_culling = 0;
             Region root = {0, 0, cfg.screen_width, cfg.screen_height};
             int indices[cfg.max_poly];
             for (int i = 0; i < polyCount; i++) indices[i] = i;

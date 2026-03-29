@@ -161,7 +161,10 @@ static int isBehindPlane(Poly* A, Poly* B)
 }
 
 static int hides(Poly* A, Poly* B) {
-    return isBehindPlane(A, B);
+    // test rapide z
+    if (A->zmax < B->zmin) return 1;
+    //else if (isBehindPlane(A, B)) return 1;
+    else return 0;
 }
 
 static int isFrontMost(Poly* A, Poly* polys, int* indices, int count)
