@@ -180,7 +180,7 @@ int main(void)
     tex = LoadTextureFromImage(img);
     UnloadImage(img);
 
-    for (int i = 0; i < mesh.vertexCount / 3; i++) {
+    for (int i = 0; i < mesh.triangleCount; i++) {
         PolyList[i].visible = false;
         PolyList[i].couleur = couleurAleatoire();
     } 
