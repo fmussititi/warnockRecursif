@@ -220,15 +220,15 @@ void warnock(RenderContext* ctx, Region* r, int* indices, int count, int depth)
     }
 
     if (localCount == 0) {
-        //if (ctx->tree_depth) DrawRectangleLines(left, top, width, height, RED);
-        if (ctx->tree_depth) DrawRectangleLinesFramebuffer(ctx, left, top, width, height, RED);
+        //DrawRectangleLines(left, top, width, height, RED);
+        DrawRectangleLinesFramebuffer(ctx, left, top, width, height, RED);
         return;
     }
 
     if (localCount == 1) {
         //DrawRectangle(left, top, width, height, ctx->polys[localIndices[0]].couleur);
-        DrawRectangleFramebuffer(ctx, left, top, width, height, ctx->polys[localIndices[0]].couleur);
-        return;
+        //DrawRectangleFramebuffer(ctx, left, top, width, height, ctx->polys[localIndices[0]].couleur);
+        //return;
     }
 
     for (int i = 0; i < localCount; i++) {
