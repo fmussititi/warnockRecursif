@@ -44,6 +44,9 @@ typedef struct poly
 
     Color couleur;
     float intensity;
+    Vector3 worldNormal;
+    LinearEq eqNx, eqNy, eqNz;
+    LinearEq eqPx, eqPy, eqPz;
 } Poly;
 
 typedef struct Region {
@@ -111,5 +114,6 @@ typedef struct {
 void PrecomputePolyLines(Poly* tri);
 void ComputePlaneEquation(Poly* tri);
 void ComputeUVEquations(Poly* tri);
+void ComputeNormalEquations(Poly* tri);
 
 #endif // MAIN_H

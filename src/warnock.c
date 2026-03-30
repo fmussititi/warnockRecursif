@@ -215,6 +215,165 @@ void DrawTexturedRegion(RenderContext* ctx, Region* R, Poly* tri) {
     }
 }
 
+void DrawNormalMappedRegion(RenderContext* ctx, Region* R, Poly* tri) {
+    const Color* texPixels = (Color*)ctx->texImage.data;
+    const Color* normPixels = (Color*)ctx->normalMap.data; 
+
+    for (int y = R->y1; y < R->y2; y++) {
+        int fbY = ctx->screenHeight - y;
+        if (fbY < 0 || fbY >= ctx->screenHeight) continue;
+
+        // Init interpolation pour la ligne
+        float curNx = tri->eqNx.a * (R->x1 + 0.5f) + tri->eqNx.b * (y + 0.5f) + tri->eqNx.c;
+        float curNy = tri->eqNy.a * (R->x1 + 0.5f) + tri->eqNy.b * (y + 0.5f) + tri->eqNy.c;
+        float curNz = tri->eqNz.a * (R->x1 + 0.5f) + tri->eqNz.b * (y + 0.5f) + tri->eqNz.c;
+        // ... tes currentU, currentV ...
+        float currentU = tri->eqU.a * (R->x1 + 0.5f) + tri->eqU.b * (y + 0.5f) + tri->eqU.c;
+        float currentV = tri->eqV.a * (R->x1 + 0.5f) + tri->eqV.b * (y + 0.5f) + tri->eqV.c;
+
+        for (int x = R->x1; x < R->x2; x++) {
+            // 1. Normale lissée (Interpolée)
+            Vector3 interpolatedN = { curNx, curNy, curNz };
+            // On la normalise pour corriger l'erreur d'interpolation linéaire
+            interpolatedN = Vector3Normalize(interpolatedN);
+
+            // 2. TBN Matrix (On utilise la normale lissée au lieu de celle du plan)
+            // On peut aussi recalculer B = Cross(N, T) pour plus de précision
+            Vector3 T = tri->tangent;
+            Vector3 B = tri->bitangent;
+
+            // 3. Sampling Normal Map
+            int ntx = (int)((currentU - floorf(currentU)) * ctx->normalMap.width);
+            int nty = (int)((currentV - floorf(currentV)) * ctx->normalMap.height);
+            Color nCol = normPixels[nty * ctx->normalMap.width + ntx];
+            Vector3 tangentN = {
+                (nCol.r / 255.0f) * 2.0f - 1.0f,
+                (nCol.g / 255.0f) * 2.0f - 1.0f,
+                (nCol.b / 255.0f) * 2.0f - 1.0f
+            };
+
+            // 4. Combinaison finale de la normale
+            Vector3 pixelNormal = {
+                T.x * tangentN.x + B.x * tangentN.y + interpolatedN.x * tangentN.z,
+                T.y * tangentN.x + B.y * tangentN.y + interpolatedN.y * tangentN.z,
+                T.z * tangentN.x + B.z * tangentN.y + interpolatedN.z * tangentN.z
+            };
+
+            // 5. Light
+            float dot = Vector3DotProduct(Vector3Normalize(pixelNormal), ctx->lightDir);
+            float intensity = fmaxf(ctx->ambient, dot);
+
+            int dtx = (int)((currentU - floorf(currentU)) * ctx->texImage.width);
+            int dty = (int)((currentV - floorf(currentV)) * ctx->texImage.height);
+            // ... Application couleur ...
+            Color texCol = texPixels[dty * ctx->texImage.width + dtx];
+            texCol.r = (unsigned char)(texCol.r * intensity);
+            texCol.g = (unsigned char)(texCol.g * intensity);
+            texCol.b = (unsigned char)(texCol.b * intensity);
+
+            if (x >= 0 && x < ctx->screenWidth)
+                framebuffer[fbY * ctx->screenWidth + x] = texCol;
+
+            // Incréments
+            curNx += tri->eqNx.a; curNy += tri->eqNy.a; curNz += tri->eqNz.a;
+            currentU += tri->eqU.a; currentV += tri->eqV.a;
+        }
+    }
+}
+
+void DrawFullShaderRegion(RenderContext* ctx, Region* R, Poly* tri) {
+    const Color* texPixels = (Color*)ctx->texImage.data;
+    const Color* normPixels = (Color*)ctx->normalMap.data;
+
+    // 1. Direction de la lumière (fixe pour le triangle)
+    Vector3 lightDir = Vector3Normalize(ctx->lightDir);
+
+    for (int y = R->y1; y < R->y2; y++) {
+        int fbY = ctx->screenHeight - y;
+        if (fbY < 0 || fbY >= ctx->screenHeight) continue;
+
+        float curPx = tri->eqPx.a * (R->x1 + 0.5f) + tri->eqPx.b * (y + 0.5f) + tri->eqPx.c;
+        float curPy = tri->eqPy.a * (R->x1 + 0.5f) + tri->eqPy.b * (y + 0.5f) + tri->eqPy.c;
+        float curPz = tri->eqPz.a * (R->x1 + 0.5f) + tri->eqPz.b * (y + 0.5f) + tri->eqPz.c;
+
+        // Init interpolation pour le début de la ligne
+        float curNx = tri->eqNx.a * (R->x1 + 0.5f) + tri->eqNx.b * (y + 0.5f) + tri->eqNx.c;
+        float curNy = tri->eqNy.a * (R->x1 + 0.5f) + tri->eqNy.b * (y + 0.5f) + tri->eqNy.c;
+        float curNz = tri->eqNz.a * (R->x1 + 0.5f) + tri->eqNz.b * (y + 0.5f) + tri->eqNz.c;
+        
+        float currentU = tri->eqU.a * (R->x1 + 0.5f) + tri->eqU.b * (y + 0.5f) + tri->eqU.c;
+        float currentV = tri->eqV.a * (R->x1 + 0.5f) + tri->eqV.b * (y + 0.5f) + tri->eqV.c;
+
+        for (int x = R->x1; x < R->x2; x++) {
+            // 1. Position actuelle du pixel en View Space
+            Vector3 pixelPosView = { curPx, curPy, curPz };
+
+            // 2. viewDir = Caméra (0,0,0) - Position du pixel
+            // En View Space, c'est simplement l'opposé de la position normalisée
+            Vector3 viewDir = Vector3Normalize(Vector3Negate(pixelPosView));
+
+            // 3. halfwayDir recalculé par pixel
+            Vector3 halfwayDir = Vector3Normalize(Vector3Add(lightDir, viewDir));
+
+            // --- 1. Normale lissée (Phong) ---
+            Vector3 interpN = { curNx, curNy, curNz };
+            // Normalisation indispensable pour le lissage
+            interpN = Vector3Normalize(interpN);
+
+            // --- 2. Sampling Normal Map & TBN ---
+            int ntx = (int)((currentU - floorf(currentU)) * ctx->normalMap.width);
+            int nty = (int)((currentV - floorf(currentV)) * ctx->normalMap.height);
+            
+            Color nCol = normPixels[nty * ctx->normalMap.width + ntx];
+            Vector3 tangentN = {
+                (nCol.r / 255.0f) * 2.0f - 1.0f,
+                (nCol.g / 255.0f) * 2.0f - 1.0f,
+                (nCol.b / 255.0f) * 2.0f - 1.0f
+            };
+
+            // Combinaison TBN (T et B sont déjà en World Space)
+            Vector3 pN = {
+                tri->tangent.x * tangentN.x + tri->bitangent.x * tangentN.y + interpN.x * tangentN.z,
+                tri->tangent.y * tangentN.x + tri->bitangent.y * tangentN.y + interpN.y * tangentN.z,
+                tri->tangent.z * tangentN.x + tri->bitangent.z * tangentN.y + interpN.z * tangentN.z
+            };
+            pN = Vector3Normalize(pN);
+
+            // --- 3. Éclairage ---
+            float dotDiffuse = fmaxf(0.0f, Vector3DotProduct(pN, lightDir));
+            float dotSpecular = fmaxf(0.0f, Vector3DotProduct(pN, halfwayDir));
+            
+            // Optimization: au lieu de powf(x, 32), on fait x^4 puis ^8... ou juste powf
+            float specFactor = powf(dotSpecular, ctx->shininess); 
+
+            float intensity = ctx->ambient + (dotDiffuse * ctx->diffuse);
+            float specular = specFactor * ctx->specular;
+
+            // --- 4. Final Color ---
+            // Texture diffuse
+            int dtx = (int)((currentU - floorf(currentU)) * ctx->texImage.width);
+            int dty = (int)((currentV - floorf(currentV)) * ctx->texImage.height);
+            Color texCol = texPixels[dty * ctx->texImage.width + dtx];
+            
+            int r = (int)(texCol.r * intensity + 255 * specular);
+            int g = (int)(texCol.g * intensity + 255 * specular);
+            int b = (int)(texCol.b * intensity + 255 * specular);
+
+            texCol.r = (r > 255) ? 255 : r;
+            texCol.g = (g > 255) ? 255 : g;
+            texCol.b = (b > 255) ? 255 : b;
+
+            if (x >= 0 && x < ctx->screenWidth)
+                framebuffer[fbY * ctx->screenWidth + x] = texCol;
+
+            // --- 5. Incrémentation ---
+            curNx += tri->eqNx.a; curNy += tri->eqNy.a; curNz += tri->eqNz.a;
+            curPx += tri->eqPx.a; curPy += tri->eqPy.a; curPz += tri->eqPz.a;
+            currentU += tri->eqU.a; currentV += tri->eqV.a;
+        }
+    }
+}
+
 void warnock(RenderContext* ctx, Region* R, int* indices, int count, int depth)
 {
     if (!R) return;
@@ -241,7 +400,7 @@ void warnock(RenderContext* ctx, Region* R, int* indices, int count, int depth)
             if (ctx->texImage.data==NULL)
                 DrawRectangleFramebuffer(ctx, left, top, width, height, ctx->polys[indices[best]].couleur);
             else 
-                DrawTexturedRegion(ctx, R, &ctx->polys[indices[best]]);
+                DrawFullShaderRegion(ctx, R, &ctx->polys[indices[best]]);
         return;
     }
 
@@ -270,7 +429,7 @@ void warnock(RenderContext* ctx, Region* R, int* indices, int count, int depth)
             if (ctx->texImage.data==NULL || ctx->hybride)
                 DrawRectangleFramebuffer(ctx, left, top, width, height, A->couleur);
             else 
-                DrawTexturedRegion(ctx, R, A);
+                DrawFullShaderRegion(ctx, R, A);
             return;
             //DrawRectangle(left, top, width, height, A->couleur);
         }        
@@ -285,7 +444,7 @@ void warnock(RenderContext* ctx, Region* R, int* indices, int count, int depth)
             if (ctx->texImage.data==NULL || ctx->hybride)
                 DrawRectangleFramebuffer(ctx, left, top, width, height, A->couleur);
             else 
-                DrawTexturedRegion(ctx, R, A);
+                DrawFullShaderRegion(ctx, R, A);
             return;
         }
     }

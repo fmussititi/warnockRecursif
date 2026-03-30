@@ -31,6 +31,7 @@ void    clear_framebuffer(RenderContext* ctx, Color clearColor);
 void    DrawRectangleFramebuffer(RenderContext* ctx, int left, int top, int width, int height, Color color);
 void    DrawRectangleLinesFramebuffer(RenderContext* ctx, int left, int top, int width, int height, Color color);
 void    DrawTriangleFramebuffer(RenderContext* ctx, Poly* tri, Color color);
+LinearEq SolveLinearEq(Vector2 p0, Vector2 p1, Vector2 p2, float v0, float v1, float v2);
 Mesh    OptimizeMesh(Mesh mesh);
 
 #endif // UTILS_H

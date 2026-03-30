@@ -64,6 +64,14 @@ void ComputeUVEquations(Poly* tri) {
     tri->eqV.c = tri->uv0.y - tri->eqV.a * x0 - tri->eqV.b * y0;
 }
 
+void ComputeNormalEquations(Poly* tri) {
+    // On résout les coefficients (a, b, c) pour f(x,y) = ax + by + c 
+    // pour chaque composante (Nx, Ny, Nz) de la normale lissée
+    tri->eqNx = SolveLinearEq(tri->p0, tri->p1, tri->p2, tri->n0.x, tri->n1.x, tri->n2.x);
+    tri->eqNy = SolveLinearEq(tri->p0, tri->p1, tri->p2, tri->n0.y, tri->n1.y, tri->n2.y);
+    tri->eqNz = SolveLinearEq(tri->p0, tri->p1, tri->p2, tri->n0.z, tri->n1.z, tri->n2.z);
+}
+
 int main(void)
 {
     Config cfg = loadConfig("config.ini");
@@ -431,15 +439,30 @@ int main(void)
             p->tangent   = Vector3Normalize(Vector3Transform(tangentsOS[i],   rotation));
             p->bitangent = Vector3Normalize(Vector3Transform(bitangentsOS[i], rotation));
 
+            if(cfg.warnock)
+            {
             // __Précalculs pour Warnock rendering _________________________________________
-            PrecomputePolyLines(p);
+                Vector3 e1 = Vector3Subtract(p->v1, p->v0);
+                Vector3 e2 = Vector3Subtract(p->v2, p->v0);
+                Vector3 worldNormal = Vector3Normalize(Vector3CrossProduct(e1, e2));
 
-            p->intensity = CalculateFlatShadingIntensity(&ctx, p, view);
+                p->worldNormal = worldNormal;
 
-            ComputePlaneEquation(p);
+                PrecomputePolyLines(p);
 
-            ComputeUVEquations(p);
-            // -----------------------------------------------------------------------------
+                p->intensity = CalculateFlatShadingIntensity(&ctx, p, view);
+
+                ComputePlaneEquation(p);
+
+                ComputeUVEquations(p);
+
+                ComputeNormalEquations(p);
+                // v0, v1, v2 sont les positions en View Space (avant projection écran)
+                p->eqPx = SolveLinearEq(p->p0, p->p1, p->p2, v0.z, v1.x, v2.x);
+                p->eqPy = SolveLinearEq(p->p0, p->p1, p->p2, v0.y, v1.y, v2.y);
+                p->eqPz = SolveLinearEq(p->p0, p->p1, p->p2, v0.z, v1.z, v2.z);
+                // -----------------------------------------------------------------------------
+            }
 
             p->couleur = PolyList[i].couleur;           
             if (cfg.warnock){ 

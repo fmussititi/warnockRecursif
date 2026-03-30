@@ -147,6 +147,26 @@ void DrawTriangleFramebuffer(RenderContext* ctx, Poly* tri, Color color)
     }
 }
 
+LinearEq SolveLinearEq(Vector2 p0, Vector2 p1, Vector2 p2, float v0, float v1, float v2) {
+    LinearEq eq = {0};
+    
+    // Calcul du déterminant (aire du triangle en 2D)
+    float det = (p1.y - p2.y) * (p0.x - p2.x) + (p2.x - p1.x) * (p0.y - p2.y);
+    
+    if (fabsf(det) < 1e-6f) return eq; // Évite la division par zéro
+    
+    float invDet = 1.0f / det;
+
+    // Calcul des coefficients 'a' (pente X) et 'b' (pente Y)
+    eq.a = ((p1.y - p2.y) * (v0 - v2) + (p2.y - p0.y) * (v1 - v2)) * invDet;
+    eq.b = ((p2.x - p1.x) * (v0 - v2) + (p0.x - p2.x) * (v1 - v2)) * invDet;
+    
+    // Calcul de 'c' (la valeur à l'origine 0,0)
+    eq.c = v0 - eq.a * p0.x - eq.b * p0.y;
+
+    return eq;
+}
+
 // Voici une version simplifiée de ce que tu dois faire :
 // 1. Parcourir tous tes 17406 sommets.
 // 2. Pour chaque sommet, vérifier s'il existe déjà dans un nouveau tableau "uniques".
