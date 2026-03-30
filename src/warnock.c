@@ -281,94 +281,127 @@ void DrawNormalMappedRegion(RenderContext* ctx, Region* R, Poly* tri) {
     }
 }
 
-void DrawFullShaderRegion(RenderContext* ctx, Region* R, Poly* tri) {
-    const Color* texPixels = (Color*)ctx->texImage.data;
+void DrawFullShaderRegion(RenderContext* ctx, Region* R, Poly* tri)
+{
+    const Color* texPixels  = (Color*)ctx->texImage.data;
     const Color* normPixels = (Color*)ctx->normalMap.data;
 
-    // 1. Direction de la lumière (fixe pour le triangle)
+    // Lumière en VIEW SPACE (IMPORTANT)
     Vector3 lightDir = Vector3Normalize(ctx->lightDir);
 
-    for (int y = R->y1; y < R->y2; y++) {
+    for (int y = R->y1; y < R->y2; y++)
+    {
         int fbY = ctx->screenHeight - y;
         if (fbY < 0 || fbY >= ctx->screenHeight) continue;
 
-        float curPx = tri->eqPx.a * (R->x1 + 0.5f) + tri->eqPx.b * (y + 0.5f) + tri->eqPx.c;
-        float curPy = tri->eqPy.a * (R->x1 + 0.5f) + tri->eqPy.b * (y + 0.5f) + tri->eqPy.c;
-        float curPz = tri->eqPz.a * (R->x1 + 0.5f) + tri->eqPz.b * (y + 0.5f) + tri->eqPz.c;
+        float px = R->x1 + 0.5f;
+        float py = y + 0.5f;
 
-        // Init interpolation pour le début de la ligne
-        float curNx = tri->eqNx.a * (R->x1 + 0.5f) + tri->eqNx.b * (y + 0.5f) + tri->eqNx.c;
-        float curNy = tri->eqNy.a * (R->x1 + 0.5f) + tri->eqNy.b * (y + 0.5f) + tri->eqNy.c;
-        float curNz = tri->eqNz.a * (R->x1 + 0.5f) + tri->eqNz.b * (y + 0.5f) + tri->eqNz.c;
-        
-        float currentU = tri->eqU.a * (R->x1 + 0.5f) + tri->eqU.b * (y + 0.5f) + tri->eqU.c;
-        float currentV = tri->eqV.a * (R->x1 + 0.5f) + tri->eqV.b * (y + 0.5f) + tri->eqV.c;
+        // Interpolation initiale
+        float curPx = tri->eqPx.a * px + tri->eqPx.b * py + tri->eqPx.c;
+        float curPy = tri->eqPy.a * px + tri->eqPy.b * py + tri->eqPy.c;
+        float curPz = tri->eqPz.a * px + tri->eqPz.b * py + tri->eqPz.c;
 
-        for (int x = R->x1; x < R->x2; x++) {
-            // 1. Position actuelle du pixel en View Space
-            Vector3 pixelPosView = { curPx, curPy, curPz };
+        float curNx = tri->eqNx.a * px + tri->eqNx.b * py + tri->eqNx.c;
+        float curNy = tri->eqNy.a * px + tri->eqNy.b * py + tri->eqNy.c;
+        float curNz = tri->eqNz.a * px + tri->eqNz.b * py + tri->eqNz.c;
 
-            // 2. viewDir = Caméra (0,0,0) - Position du pixel
-            // En View Space, c'est simplement l'opposé de la position normalisée
-            Vector3 viewDir = Vector3Normalize(Vector3Negate(pixelPosView));
+        float currentU = tri->eqU.a * px + tri->eqU.b * py + tri->eqU.c;
+        float currentV = tri->eqV.a * px + tri->eqV.b * py + tri->eqV.c;
 
-            // 3. halfwayDir recalculé par pixel
-            Vector3 halfwayDir = Vector3Normalize(Vector3Add(lightDir, viewDir));
+        for (int x = R->x1; x < R->x2; x++)
+        {
+            // =======================
+            // VIEW DIR (VIEW SPACE)
+            // =======================
+            Vector3 pixelPos = { curPx, curPy, curPz };
+            Vector3 viewDir  = Vector3Normalize(Vector3Negate(pixelPos));
 
-            // --- 1. Normale lissée (Phong) ---
-            Vector3 interpN = { curNx, curNy, curNz };
-            // Normalisation indispensable pour le lissage
-            interpN = Vector3Normalize(interpN);
+            // =======================
+            // NORMAL INTERPOLÉE
+            // =======================
+            Vector3 N = Vector3Normalize((Vector3){ curNx, curNy, curNz });
 
-            // --- 2. Sampling Normal Map & TBN ---
-            int ntx = (int)((currentU - floorf(currentU)) * ctx->normalMap.width);
-            int nty = (int)((currentV - floorf(currentV)) * ctx->normalMap.height);
-            
+            // =======================
+            // UV SAFE WRAP
+            // =======================
+            int ntx = abs((int)(currentU * ctx->normalMap.width)) % ctx->normalMap.width;
+            int nty = abs((int)(currentV * ctx->normalMap.height)) % ctx->normalMap.height;
+
             Color nCol = normPixels[nty * ctx->normalMap.width + ntx];
+
+            // normal map -> [-1,1]
             Vector3 tangentN = {
                 (nCol.r / 255.0f) * 2.0f - 1.0f,
                 (nCol.g / 255.0f) * 2.0f - 1.0f,
                 (nCol.b / 255.0f) * 2.0f - 1.0f
             };
 
-            // Combinaison TBN (T et B sont déjà en World Space)
-            Vector3 pN = {
-                tri->tangent.x * tangentN.x + tri->bitangent.x * tangentN.y + interpN.x * tangentN.z,
-                tri->tangent.y * tangentN.x + tri->bitangent.y * tangentN.y + interpN.y * tangentN.z,
-                tri->tangent.z * tangentN.x + tri->bitangent.z * tangentN.y + interpN.z * tangentN.z
+            // =======================
+            // NORMAL STRENGTH (optionnel mais important)
+            // =======================
+            float normalStrength = 0.6f;
+            tangentN.x *= normalStrength;
+            tangentN.y *= normalStrength;
+            tangentN.z = (1.0f - normalStrength) + tangentN.z * normalStrength;
+
+            // =======================
+            // TBN (simplifié et stable)
+            // =======================
+            Vector3 T = Vector3Normalize(tri->tangent);
+            Vector3 B = Vector3Normalize(tri->bitangent);
+
+            Vector3 finalN = {
+                T.x * tangentN.x + B.x * tangentN.y + N.x * tangentN.z,
+                T.y * tangentN.x + B.y * tangentN.y + N.y * tangentN.z,
+                T.z * tangentN.x + B.z * tangentN.y + N.z * tangentN.z
             };
-            pN = Vector3Normalize(pN);
+            finalN = Vector3Normalize(Vector3Negate(finalN));
 
-            // --- 3. Éclairage ---
-            float dotDiffuse = fmaxf(0.0f, Vector3DotProduct(pN, lightDir));
-            float dotSpecular = fmaxf(0.0f, Vector3DotProduct(pN, halfwayDir));
-            
-            // Optimization: au lieu de powf(x, 32), on fait x^4 puis ^8... ou juste powf
-            float specFactor = powf(dotSpecular, ctx->shininess); 
+            // =======================
+            // LIGHTING
+            // =======================
+            float dotNL = fmaxf(Vector3DotProduct(finalN, lightDir), 0.0f);
 
-            float intensity = ctx->ambient + (dotDiffuse * ctx->diffuse);
-            float specular = specFactor * ctx->specular;
+            float diffuse = dotNL;
 
-            // --- 4. Final Color ---
-            // Texture diffuse
-            int dtx = (int)((currentU - floorf(currentU)) * ctx->texImage.width);
-            int dty = (int)((currentV - floorf(currentV)) * ctx->texImage.height);
-            Color texCol = texPixels[dty * ctx->texImage.width + dtx];
-            
-            int r = (int)(texCol.r * intensity + 255 * specular);
-            int g = (int)(texCol.g * intensity + 255 * specular);
-            int b = (int)(texCol.b * intensity + 255 * specular);
+            Vector3 halfDir = Vector3Normalize(Vector3Add(lightDir, viewDir));
+            float dotNH = fmaxf(Vector3DotProduct(finalN, halfDir), 0.0f);
+            float spec = powf(dotNH, ctx->shininess);
 
-            texCol.r = (r > 255) ? 255 : r;
-            texCol.g = (g > 255) ? 255 : g;
-            texCol.b = (b > 255) ? 255 : b;
+            float lighting = fminf(ctx->ambient + diffuse * ctx->diffuse, 1.0f);
+            float specular = spec * ctx->specular;
+
+            // =======================
+            // TEXTURE
+            // =======================
+            int dtx = abs((int)(currentU * ctx->texImage.width)) % ctx->texImage.width;
+            int dty = abs((int)(currentV * ctx->texImage.height)) % ctx->texImage.height;
+
+            Color tex = texPixels[dty * ctx->texImage.width + dtx];
+
+            // =======================
+            // FINAL COLOR
+            // =======================
+            float r = tex.r * lighting + tex.r * specular;
+            float g = tex.g * lighting + tex.g * specular;
+            float b = tex.b * lighting + tex.b * specular;
+
+            Color out = {
+                (unsigned char)fminf(r, 255.0f),
+                (unsigned char)fminf(g, 255.0f),
+                (unsigned char)fminf(b, 255.0f),
+                255
+            };
 
             if (x >= 0 && x < ctx->screenWidth)
-                framebuffer[fbY * ctx->screenWidth + x] = texCol;
+                framebuffer[fbY * ctx->screenWidth + x] = out;
 
-            // --- 5. Incrémentation ---
-            curNx += tri->eqNx.a; curNy += tri->eqNy.a; curNz += tri->eqNz.a;
+            // =======================
+            // INCREMENT
+            // =======================
             curPx += tri->eqPx.a; curPy += tri->eqPy.a; curPz += tri->eqPz.a;
+            curNx += tri->eqNx.a; curNy += tri->eqNy.a; curNz += tri->eqNz.a;
             currentU += tri->eqU.a; currentV += tri->eqV.a;
         }
     }
