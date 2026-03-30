@@ -16,6 +16,18 @@
 #include "tiles.h"
 #include "frustum.h"
 
+void UpdateSpecularLUT(RenderContext* ctx) {
+    // Si la shininess n'a pas changé, on ne fait rien (gain CPU)
+    if (ctx->shininess == lastShininess) return;
+
+    for (int i = 0; i < SPEC_LUT_SIZE; i++) {
+        float dot = (float)i / (float)(SPEC_LUT_SIZE - 1);
+        specLUT[i] = powf(dot, ctx->shininess);
+    }
+    
+    lastShininess = ctx->shininess;
+}
+
 void PrecomputePolyLines(Poly* tri) {
     Vector2 p[3] = {tri->p0, tri->p1, tri->p2};
     for (int i = 0; i < 3; i++) {
@@ -70,6 +82,21 @@ void ComputeNormalEquations(Poly* tri) {
     tri->eqNx = SolveLinearEq(tri->p0, tri->p1, tri->p2, tri->n0.x, tri->n1.x, tri->n2.x);
     tri->eqNy = SolveLinearEq(tri->p0, tri->p1, tri->p2, tri->n0.y, tri->n1.y, tri->n2.y);
     tri->eqNz = SolveLinearEq(tri->p0, tri->p1, tri->p2, tri->n0.z, tri->n1.z, tri->n2.z);
+}
+
+void PreparePolyEquations(Poly* p) {
+    // Interpolation des positions 3D (Px, Py, Pz)
+    p->eqPx = SolveLinearEq(p->p0, p->p1, p->p2, p->v0.x, p->v1.x, p->v2.x);
+    p->eqPy = SolveLinearEq(p->p0, p->p1, p->p2, p->v0.y, p->v1.y, p->v2.y);
+    p->eqPz = SolveLinearEq(p->p0, p->p1, p->p2, p->v0.z, p->v1.z, p->v2.z);
+    
+    PrecomputePolyLines(p);                
+
+    ComputePlaneEquation(p);
+
+    ComputeUVEquations(p);
+
+    ComputeNormalEquations(p);
 }
 
 int main(void)
@@ -280,7 +307,8 @@ int main(void)
     }
     printf("Tangentes précalculées : %d triangles\n", mesh.triangleCount);
 
-
+    if (cfg.warnock) UpdateSpecularLUT(&ctx);
+    
     if (cfg.tiles || cfg.warnock){
         if (cfg.textures_enabled) {
             ctx.texImage  = LoadImage(cfg.tex_diffuse);
@@ -448,20 +476,9 @@ int main(void)
 
                 p->worldNormal = worldNormal;
 
-                PrecomputePolyLines(p);
-
                 p->intensity = CalculateFlatShadingIntensity(&ctx, p, view);
 
-                ComputePlaneEquation(p);
-
-                ComputeUVEquations(p);
-
-                ComputeNormalEquations(p);
-                // v0, v1, v2 sont les positions en View Space (avant projection écran)
-                p->eqPx = SolveLinearEq(p->p0, p->p1, p->p2, v0.z, v1.x, v2.x);
-                p->eqPy = SolveLinearEq(p->p0, p->p1, p->p2, v0.y, v1.y, v2.y);
-                p->eqPz = SolveLinearEq(p->p0, p->p1, p->p2, v0.z, v1.z, v2.z);
-                // -----------------------------------------------------------------------------
+                PreparePolyEquations(p);
             }
 
             p->couleur = PolyList[i].couleur;           
@@ -557,8 +574,7 @@ int main(void)
             DrawText(TextFormat("Painter"), 10, 10, 20, WHITE);
         }
 
-        if (cfg.warnock) {
-            //cfg.backface_culling = 0;
+        if (cfg.warnock) {            
             Region root = {0, 0, cfg.screen_width, cfg.screen_height};
             int indices[cfg.max_poly];
             for (int i = 0; i < polyCount; i++) indices[i] = i;

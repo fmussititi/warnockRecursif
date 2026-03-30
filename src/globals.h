@@ -57,4 +57,8 @@ typedef struct {
 extern Tile* tiles;
 extern int* all_indices;
 
+#define SPEC_LUT_SIZE 1024
+extern float specLUT[SPEC_LUT_SIZE];
+extern float lastShininess; // Pour savoir si on doit recalculer
+
 #endif // GLOBALS_H

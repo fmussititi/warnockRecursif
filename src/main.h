@@ -111,9 +111,11 @@ typedef struct {
     bool isProjected;      
 } CachedVertex;
 
+void UpdateSpecularLUT(RenderContext* ctx);
 void PrecomputePolyLines(Poly* tri);
 void ComputePlaneEquation(Poly* tri);
 void ComputeUVEquations(Poly* tri);
 void ComputeNormalEquations(Poly* tri);
+void PreparePolyEquations(Poly* p);
 
 #endif // MAIN_H

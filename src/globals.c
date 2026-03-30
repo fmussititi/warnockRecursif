@@ -19,3 +19,7 @@ pthread_barrier_t barrierTilesDone;
 
 Tile* tiles = NULL;
 int* all_indices = NULL;
+
+#define SPEC_LUT_SIZE 1024
+float specLUT[SPEC_LUT_SIZE];
+float lastShininess = -1.0f; // Pour savoir si on doit recalculer

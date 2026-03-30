@@ -367,7 +367,11 @@ void DrawFullShaderRegion(RenderContext* ctx, Region* R, Poly* tri)
 
             Vector3 halfDir = Vector3Normalize(Vector3Add(lightDir, viewDir));
             float dotNH = fmaxf(Vector3DotProduct(finalN, halfDir), 0.0f);
-            float spec = powf(dotNH, ctx->shininess);
+            //float spec = powf(dotNH, ctx->shininess);
+            // --- Remplacement de powf ---
+            int lutIndex = (int)(dotNH * (SPEC_LUT_SIZE - 1));
+            float spec = specLUT[lutIndex]; 
+            // ----------------------------
 
             float lighting = fminf(ctx->ambient + diffuse * ctx->diffuse, 1.0f);
             float specular = spec * ctx->specular;
