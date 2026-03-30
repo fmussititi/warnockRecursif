@@ -11,48 +11,33 @@ void subdivise(Region* r, Region regions[4]) {
     regions[3] = (Region){(r->x1+r->x2)/2,   r->y1,           r->x2,           (r->y1+r->y2)/2};
 }
 
-static inline bool PointInRegion(Vector2 p, Region* r) {
-    return (p.x >= r->x1 && p.x <= r->x2 &&
-            p.y >= r->y1 && p.y <= r->y2);
-}
-
-static bool SegmentsIntersect(Vector2 p1, Vector2 q1, Vector2 p2, Vector2 q2) {
-    #define ORIENT(a,b,c) ((b.x-a.x)*(c.y-a.y) - (b.y-a.y)*(c.x-a.x))
-    float o1 = ORIENT(p1,q1,p2);
-    float o2 = ORIENT(p1,q1,q2);
-    float o3 = ORIENT(p2,q2,p1);
-    float o4 = ORIENT(p2,q2,q1);
-    #undef ORIENT
-    return (o1*o2 < 0 && o3*o4 < 0);
+// Fonction utilitaire pour tester si un rectangle est du côté "extérieur" d'une arête
+// On prend le coin du rectangle qui maximise la fonction de distance signée.
+static inline bool IsRegionOutsideEdge(Region* r, EdgeLine* e) {
+    float val = e->C;
+    // On choisit le coin (x,y) qui donne la valeur maximale pour Ax + By + C
+    val += (e->A > 0) ? e->A * r->x2 : e->A * r->x1;
+    val += (e->B > 0) ? e->B * r->y2 : e->B * r->y1;
+    
+    // Si même le point le plus "favorable" est < 0, le rectangle est hors du demi-plan
+    return val < 0; 
 }
 
 bool TriangleIntersectsRegion(Region* r, Poly* tri) {
-    Vector2 corners[4] = {
-        {r->x1, r->y1}, {r->x2, r->y1},
-        {r->x2, r->y2}, {r->x1, r->y2}
-    };
-    for (int i = 0; i < 4; i++)
-        if (CheckCollisionPointTriangle(corners[i], tri->p0, tri->p1, tri->p2))
-            return true;
+    // 1. Test AABB (Largeur/Hauteur) - Le plus rapide
+    if (tri->maxX < r->x1 || tri->minX > r->x2 ||
+        tri->maxY < r->y1 || tri->minY > r->y2) return false;
 
-    if (PointInRegion(tri->p0, r)) return true;
-    if (PointInRegion(tri->p1, r)) return true;
-    if (PointInRegion(tri->p2, r)) return true;
+    for (int i = 0; i < 3; i++) {
 
-    Vector2 rectEdges[4][2] = {
-        {{r->x1,r->y1},{r->x2,r->y1}}, {{r->x2,r->y1},{r->x2,r->y2}},
-        {{r->x2,r->y2},{r->x1,r->y2}}, {{r->x1,r->y2},{r->x1,r->y1}}
-    };
-    Vector2 triEdges[3][2] = {
-        {tri->p0,tri->p1}, {tri->p1,tri->p2}, {tri->p2,tri->p0}
-    };
-    for (int i = 0; i < 3; i++)
-        for (int j = 0; j < 4; j++)
-            if (SegmentsIntersect(triEdges[i][0], triEdges[i][1],
-                                  rectEdges[j][0], rectEdges[j][1]))
-                return true;
+        // 3. Si la région est totalement à l'extérieur d'une seule arête, 
+        // alors il n'y a pas d'intersection (Théorème de l'axe séparateur).
+        if (IsRegionOutsideEdge(r, &tri->lines[i])) return false;
+    }
 
-    return false;
+    // 4. Si on passe les tests ci-dessus, il y a soit intersection, 
+    // soit le rectangle est entièrement DANS le triangle.
+    return true;
 }
 
 bool AABBOverlap(Region* r, Poly* p) {
@@ -61,26 +46,23 @@ bool AABBOverlap(Region* r, Poly* p) {
 }
 
 int region_fully_covered(Region* r, Poly* tri) {
-    Vector2 c[4] = {
-        {r->x1,r->y1}, {r->x2,r->y1},
-        {r->x1,r->y2}, {r->x2,r->y2}
-    };
-    for (int i = 0; i < 4; i++)
-        if (!CheckCollisionPointTriangle(c[i], tri->p0, tri->p1, tri->p2))
-            return 0;
-    return 1;
-}
+// On teste les 3 arêtes du triangle
+    for (int i = 0; i < 3; i++) {
+        EdgeLine* e = &tri->lines[i];
+        
+        // Pour que la région soit entièrement couverte, il faut que le coin
+        // le PLUS PROCHE de l'extérieur soit quand même à l'intérieur.
+        // On cherche donc le coin (x,y) qui MINIMISE Ax + By + C.
+        float min_val = e->C;
+        min_val += (e->A > 0) ? e->A * r->x1 : e->A * r->x2;
+        min_val += (e->B > 0) ? e->B * r->y1 : e->B * r->y2;
 
-int region_outside(Region* r, Poly* tri) {
-    int minx = tri->p0.x < tri->p1.x ? (tri->p0.x < tri->p2.x ? (int)tri->p0.x : (int)tri->p2.x)
-                                      : (tri->p1.x < tri->p2.x ? (int)tri->p1.x : (int)tri->p2.x);
-    int miny = tri->p0.y < tri->p1.y ? (tri->p0.y < tri->p2.y ? (int)tri->p0.y : (int)tri->p2.y)
-                                      : (tri->p1.y < tri->p2.y ? (int)tri->p1.y : (int)tri->p2.y);
-    int maxx = tri->p0.x > tri->p1.x ? (tri->p0.x > tri->p2.x ? (int)tri->p0.x : (int)tri->p2.x)
-                                      : (tri->p1.x > tri->p2.x ? (int)tri->p1.x : (int)tri->p2.x);
-    int maxy = tri->p0.y > tri->p1.y ? (tri->p0.y > tri->p2.y ? (int)tri->p0.y : (int)tri->p2.y)
-                                      : (tri->p1.y > tri->p2.y ? (int)tri->p1.y : (int)tri->p2.y);
-    return (maxx < r->x1 || minx > r->x2 || maxy < r->y1 || miny > r->y2);
+        // Si le pire coin est < 0, alors au moins une partie du rectangle
+        // est en dehors de cette arête -> Pas de couverture totale.
+        if (min_val < 0) return 0;
+    }
+
+    return 1;
 }
 
 void drawRegionZBuffer(RenderContext* ctx, Region* r, Poly* polys, int* indices, int count)

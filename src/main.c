@@ -381,6 +381,18 @@ int main(void)
             p->tangent   = Vector3Normalize(Vector3Transform(tangentsOS[i],   rotation));
             p->bitangent = Vector3Normalize(Vector3Transform(bitangentsOS[i], rotation));
 
+            //PrecomputePolyLines
+            Vector2 _p[3] = {p->p0, p->p1, p->p2};
+            for (int i = 0; i < 3; i++) {
+                Vector2 pA = _p[i];
+                Vector2 pB = _p[(i + 1) % 3];
+
+                // Vecteur normal pointant vers l'intérieur (si sens anti-horaire)
+                p->lines[i].A = -(pB.y - pA.y);
+                p->lines[i].B = pB.x - pA.x;
+                p->lines[i].C = -(p->lines[i].A * pA.x + p->lines[i].B * pA.y);
+            }
+
             p->couleur = PolyList[i].couleur;           
             if (cfg.warnock){ 
                 if (cfg.flatShading) flatShading(&ctx, p, view);
