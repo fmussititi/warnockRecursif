@@ -4,35 +4,35 @@
 #include <math.h>
 #include <stdbool.h>
 
-void subdivise(Region* r, Region regions[4]) {
-    regions[0] = (Region){r->x1,             (r->y1+r->y2)/2, (r->x1+r->x2)/2, r->y2};
-    regions[1] = (Region){(r->x1+r->x2)/2,   (r->y1+r->y2)/2, r->x2,           r->y2};
-    regions[2] = (Region){r->x1,             r->y1,           (r->x1+r->x2)/2, (r->y1+r->y2)/2};
-    regions[3] = (Region){(r->x1+r->x2)/2,   r->y1,           r->x2,           (r->y1+r->y2)/2};
+void subdivise(Region* R, Region regions[4]) {
+    regions[0] = (Region){R->x1,             (R->y1+R->y2)/2, (R->x1+R->x2)/2, R->y2};
+    regions[1] = (Region){(R->x1+R->x2)/2,   (R->y1+R->y2)/2, R->x2,           R->y2};
+    regions[2] = (Region){R->x1,             R->y1,           (R->x1+R->x2)/2, (R->y1+R->y2)/2};
+    regions[3] = (Region){(R->x1+R->x2)/2,   R->y1,           R->x2,           (R->y1+R->y2)/2};
 }
 
 // Fonction utilitaire pour tester si un rectangle est du côté "extérieur" d'une arête
 // On prend le coin du rectangle qui maximise la fonction de distance signée.
-static inline bool IsRegionOutsideEdge(Region* r, EdgeLine* e) {
+static inline bool IsRegionOutsideEdge(Region* R, EdgeLine* e) {
     float val = e->C;
     // On choisit le coin (x,y) qui donne la valeur maximale pour Ax + By + C
-    val += (e->A > 0) ? e->A * r->x2 : e->A * r->x1;
-    val += (e->B > 0) ? e->B * r->y2 : e->B * r->y1;
+    val += (e->A > 0) ? e->A * R->x2 : e->A * R->x1;
+    val += (e->B > 0) ? e->B * R->y2 : e->B * R->y1;
     
     // Si même le point le plus "favorable" est < 0, le rectangle est hors du demi-plan
     return val < 0; 
 }
 
-bool TriangleIntersectsRegion(Region* r, Poly* tri) {
+bool TriangleIntersectsRegion(Region* R, Poly* tri) {
     // 1. Test AABB (Largeur/Hauteur) - Le plus rapide
-    if (tri->maxX < r->x1 || tri->minX > r->x2 ||
-        tri->maxY < r->y1 || tri->minY > r->y2) return false;
+    if (tri->maxX < R->x1 || tri->minX > R->x2 ||
+        tri->maxY < R->y1 || tri->minY > R->y2) return false;
 
     for (int i = 0; i < 3; i++) {
 
         // 3. Si la région est totalement à l'extérieur d'une seule arête, 
         // alors il n'y a pas d'intersection (Théorème de l'axe séparateur).
-        if (IsRegionOutsideEdge(r, &tri->lines[i])) return false;
+        if (IsRegionOutsideEdge(R, &tri->lines[i])) return false;
     }
 
     // 4. Si on passe les tests ci-dessus, il y a soit intersection, 
@@ -40,12 +40,12 @@ bool TriangleIntersectsRegion(Region* r, Poly* tri) {
     return true;
 }
 
-bool AABBOverlap(Region* r, Poly* p) {
-    return !(p->maxX < r->x1 || p->minX > r->x2 ||
-             p->maxY < r->y1 || p->minY > r->y2);
+bool AABBOverlap(Region* R, Poly* p) {
+    return !(p->maxX < R->x1 || p->minX > R->x2 ||
+             p->maxY < R->y1 || p->minY > R->y2);
 }
 
-int region_fully_covered(Region* r, Poly* tri) {
+int region_fully_covered(Region* R, Poly* tri) {
 // On teste les 3 arêtes du triangle
     for (int i = 0; i < 3; i++) {
         EdgeLine* e = &tri->lines[i];
@@ -54,8 +54,8 @@ int region_fully_covered(Region* r, Poly* tri) {
         // le PLUS PROCHE de l'extérieur soit quand même à l'intérieur.
         // On cherche donc le coin (x,y) qui MINIMISE Ax + By + C.
         float min_val = e->C;
-        min_val += (e->A > 0) ? e->A * r->x1 : e->A * r->x2;
-        min_val += (e->B > 0) ? e->B * r->y1 : e->B * r->y2;
+        min_val += (e->A > 0) ? e->A * R->x1 : e->A * R->x2;
+        min_val += (e->B > 0) ? e->B * R->y1 : e->B * R->y2;
 
         // Si le pire coin est < 0, alors au moins une partie du rectangle
         // est en dehors de cette arête -> Pas de couverture totale.
@@ -65,10 +65,10 @@ int region_fully_covered(Region* r, Poly* tri) {
     return 1;
 }
 
-void drawRegionZBuffer(RenderContext* ctx, Region* r, Poly* polys, int* indices, int count)
+void drawRegionZBuffer(RenderContext* ctx, Region* R, Poly* polys, int* indices, int count)
 {
-    int width  = r->x2 - r->x1;
-    int height = r->y2 - r->y1;
+    int width  = R->x2 - R->x1;
+    int height = R->y2 - R->y1;
 
     float zbuf[width * height];
     for (int i = 0; i < width * height; i++)
@@ -77,10 +77,10 @@ void drawRegionZBuffer(RenderContext* ctx, Region* r, Poly* polys, int* indices,
     for (int i = 0; i < count; i++) {
         Poly* tri = &polys[indices[i]];
 
-        int minX = (int)fmaxf(r->x1, floorf(tri->minX));
-        int maxX = (int)fminf(r->x2-1, ceilf(tri->maxX));
-        int minY = (int)fmaxf(r->y1, floorf(tri->minY));
-        int maxY = (int)fminf(r->y2-1, ceilf(tri->maxY));
+        int minX = (int)fmaxf(R->x1, floorf(tri->minX));
+        int maxX = (int)fminf(R->x2-1, ceilf(tri->maxX));
+        int minY = (int)fmaxf(R->y1, floorf(tri->minY));
+        int maxY = (int)fminf(R->y2-1, ceilf(tri->maxY));
 
         if (minX > maxX || minY > maxY) continue;
 
@@ -107,8 +107,8 @@ void drawRegionZBuffer(RenderContext* ctx, Region* r, Poly* polys, int* indices,
                     float gamma = 1.0f - alpha - beta;
                     float z     = alpha*tri->z0 + beta*tri->z1 + gamma*tri->z2;
 
-                    int lx    = x - r->x1;
-                    int ly    = y - r->y1;
+                    int lx    = x - R->x1;
+                    int ly    = y - R->y1;
                     int index = ly * width + lx;
 
                     if (z < zbuf[index]) {
@@ -135,15 +135,15 @@ static inline float GetZAt(Poly* tri, float x, float y) {
     return -(tri->plane.A * x + tri->plane.B * y + tri->plane.D) / tri->plane.C;
 }
 
-static bool isADevantB(Region* r, Poly* A, Poly* B) {
+static bool isADevantB(Region* R, Poly* A, Poly* B) {
     // Test rapide : si la boîte Z de A est devant B, pas besoin de calculs de plans
     if (A->zmax < B->zmin) return true;
     // Si la boîte Z de B est devant A, A ne peut pas être devant
     if (B->zmax < A->zmin) return false;
 
     // Test des 4 coins de la région
-    float cornersX[4] = {(float)r->x1, (float)r->x2, (float)r->x1, (float)r->x2};
-    float cornersY[4] = {(float)r->y1, (float)r->y1, (float)r->y2, (float)r->y2};
+    float cornersX[4] = {(float)R->x1, (float)R->x2, (float)R->x1, (float)R->x2};
+    float cornersY[4] = {(float)R->y1, (float)R->y1, (float)R->y2, (float)R->y2};
 
     for (int i = 0; i < 4; i++) {
         float zA = GetZAt(A, cornersX[i], cornersY[i]);
@@ -158,30 +158,30 @@ static bool isADevantB(Region* r, Poly* A, Poly* B) {
 }
 
 
-static int isFrontMost(Region* r, Poly* A, Poly* polys, int* indices, int count)
+static int isFrontMost(Region* R, Poly* A, Poly* polys, int* indices, int count)
 {
     for (int i = 0; i < count; i++) {
         Poly* B = &polys[indices[i]];
 
         if (B == A) continue;
 
-        // Si A n'est pas devant B sur toute la surface du rectangle r,
+        // Si A n'est pas devant B sur toute la surface du rectangle R,
         // on renvoie 0 (ce qui forcera Warnock à subdiviser)
-        if (!isADevantB(r, A, B)) {
+        if (!isADevantB(R, A, B)) {
             return 0;
         }
     }
     return 1;
 }
 
-void warnock(RenderContext* ctx, Region* r, int* indices, int count, int depth)
+void warnock(RenderContext* ctx, Region* R, int* indices, int count, int depth)
 {
-    if (!r) return;
+    if (!R) return;
 
-    int left   = r->x1;
-    int top    = ctx->screenHeight - r->y2;
-    int width  = r->x2 - r->x1;
-    int height = r->y2 - r->y1;
+    int left   = R->x1;
+    int top    = ctx->screenHeight - R->y2;
+    int width  = R->x2 - R->x1;
+    int height = R->y2 - R->y1;
 
     if (depth >= ctx->tree_depth) {
         int best = 0;
@@ -195,7 +195,7 @@ void warnock(RenderContext* ctx, Region* r, int* indices, int count, int depth)
             }
         }
         if(ctx->hybride)
-            drawRegionZBuffer(ctx, r, ctx->polys, indices, count);
+            drawRegionZBuffer(ctx, R, ctx->polys, indices, count);
         else
             DrawRectangleFramebuffer(ctx, left, top, width, height, ctx->polys[indices[best]].couleur);
         return;
@@ -210,8 +210,8 @@ void warnock(RenderContext* ctx, Region* r, int* indices, int count, int depth)
         if (!ctx->polys[idx].visible) continue;
 
         bool overlaps = (width > 20 && height > 20)
-            ? AABBOverlap(r, &ctx->polys[idx])
-            : TriangleIntersectsRegion(r, &ctx->polys[idx]);
+            ? AABBOverlap(R, &ctx->polys[idx])
+            : TriangleIntersectsRegion(R, &ctx->polys[idx]);
 
         if (overlaps) localIndices[localCount++] = idx;
     }
@@ -225,7 +225,7 @@ void warnock(RenderContext* ctx, Region* r, int* indices, int count, int depth)
     if (localCount == 1) {
         Poly* A = &ctx->polys[localIndices[0]];
         // Le triangle couvre tout le rectangle → on peut remplir
-        if (region_fully_covered(r, A)) {            
+        if (region_fully_covered(R, A)) {            
             DrawRectangleFramebuffer(ctx, left, top, width, height, A->couleur);
             //DrawRectangle(left, top, width, height, A->couleur);
             return;
@@ -235,7 +235,7 @@ void warnock(RenderContext* ctx, Region* r, int* indices, int count, int depth)
 
     for (int i = 0; i < localCount; i++) {
         Poly* A = &ctx->polys[localIndices[i]];
-        if (region_fully_covered(r, A) && isFrontMost(r, A, ctx->polys, localIndices, localCount)) {
+        if (region_fully_covered(R, A) && isFrontMost(R, A, ctx->polys, localIndices, localCount)) {
             //DrawRectangle(left, top, width, height, A->couleur);
             DrawRectangleFramebuffer(ctx, left, top, width, height, A->couleur);
             return;
@@ -243,7 +243,7 @@ void warnock(RenderContext* ctx, Region* r, int* indices, int count, int depth)
     }
 
     Region regions[4];
-    subdivise(r, regions);
+    subdivise(R, regions);
     for (int i = 0; i < 4; i++)
         warnock(ctx, &regions[i], localIndices, localCount, depth + 1);
 }
