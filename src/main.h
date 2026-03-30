@@ -11,6 +11,10 @@ typedef struct {
     float A, B, C, D;
 } PlaneEq;
 
+typedef struct {
+    float a, b, c; // Pour l'équation f(x,y) = ax + by + c
+} LinearEq;
+
 typedef struct poly
 {
     bool visible;
@@ -29,6 +33,8 @@ typedef struct poly
     Vector3 v0, v1, v2;  // positions 3D world space
     Vector2 uv0, uv1, uv2;  // coordonnées UV aux 3 sommets
     Color c0, c1, c2;
+    LinearEq eqU;
+    LinearEq eqV;
 
     Vector3 tangent;    // vecteur T
     Vector3 bitangent;  // vecteur B
@@ -37,6 +43,7 @@ typedef struct poly
     PlaneEq plane;
 
     Color couleur;
+    float intensity;
 } Poly;
 
 typedef struct Region {
@@ -100,5 +107,9 @@ typedef struct {
     Vector3 normal;        // <--- La normale lissée et transformée
     bool isProjected;      
 } CachedVertex;
+
+void PrecomputePolyLines(Poly* tri);
+void ComputePlaneEquation(Poly* tri);
+void ComputeUVEquations(Poly* tri);
 
 #endif // MAIN_H

@@ -5,6 +5,7 @@
 #include "raymath.h"
 #include "main.h"
 
+float CalculateFlatShadingIntensity(RenderContext* ctx, Poly* p, Matrix view);
 void flatShading(RenderContext* ctx, Poly* p, Matrix view);
 void gouraudShading(RenderContext* ctx, Poly* p);
 

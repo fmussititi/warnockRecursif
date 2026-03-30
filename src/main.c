@@ -16,6 +16,54 @@
 #include "tiles.h"
 #include "frustum.h"
 
+void PrecomputePolyLines(Poly* tri) {
+    Vector2 p[3] = {tri->p0, tri->p1, tri->p2};
+    for (int i = 0; i < 3; i++) {
+        Vector2 pA = p[i];
+        Vector2 pB = p[(i + 1) % 3];
+
+        // Vecteur normal pointant vers l'intérieur (si sens anti-horaire)
+        tri->lines[i].A = -(pB.y - pA.y);
+        tri->lines[i].B = pB.x - pA.x;
+        tri->lines[i].C = -(tri->lines[i].A * pA.x + tri->lines[i].B * pA.y);
+    }
+}
+
+void ComputePlaneEquation(Poly* tri) {
+    Vector3 v1 = {tri->p1.x - tri->p0.x, tri->p1.y - tri->p0.y, tri->z1 - tri->z0};
+    Vector3 v2 = {tri->p2.x - tri->p0.x, tri->p2.y - tri->p0.y, tri->z2 - tri->z0};
+
+    // Produit vectoriel pour avoir la normale (A, B, C)
+    tri->plane.A = v1.y * v2.z - v1.z * v2.y;
+    tri->plane.B = v1.z * v2.x - v1.x * v2.z;
+    tri->plane.C = v1.x * v2.y - v1.y * v2.x;
+    
+    // D = -(Ax0 + By0 + Cz0)
+    tri->plane.D = -(tri->plane.A * tri->p0.x + 
+                     tri->plane.B * tri->p0.y + 
+                     tri->plane.C * tri->z0);
+}
+
+void ComputeUVEquations(Poly* tri) {
+    float x0 = tri->p0.x, y0 = tri->p0.y;
+    float x1 = tri->p1.x, y1 = tri->p1.y;
+    float x2 = tri->p2.x, y2 = tri->p2.y;
+
+    float det = (y1 - y2) * (x0 - x2) + (x2 - x1) * (y0 - y2);
+    if (fabsf(det) < 1e-6f) return; // Triangle dégénéré
+    float invDet = 1.0f / det;
+
+    // Coefficients pour U
+    tri->eqU.a = ((y1 - y2) * (tri->uv0.x - tri->uv2.x) + (y2 - y0) * (tri->uv1.x - tri->uv2.x)) * invDet;
+    tri->eqU.b = ((x2 - x1) * (tri->uv0.x - tri->uv2.x) + (x0 - x2) * (tri->uv1.x - tri->uv2.x)) * invDet;
+    tri->eqU.c = tri->uv0.x - tri->eqU.a * x0 - tri->eqU.b * y0;
+
+    // Coefficients pour V
+    tri->eqV.a = ((y1 - y2) * (tri->uv0.y - tri->uv2.y) + (y2 - y0) * (tri->uv1.y - tri->uv2.y)) * invDet;
+    tri->eqV.b = ((x2 - x1) * (tri->uv0.y - tri->uv2.y) + (x0 - x2) * (tri->uv1.y - tri->uv2.y)) * invDet;
+    tri->eqV.c = tri->uv0.y - tri->eqV.a * x0 - tri->eqV.b * y0;
+}
+
 int main(void)
 {
     Config cfg = loadConfig("config.ini");
@@ -225,14 +273,7 @@ int main(void)
     printf("Tangentes précalculées : %d triangles\n", mesh.triangleCount);
 
 
-    if (cfg.tiles){
-        if (cfg.envMap_enable) {
-            ctx.envMap = LoadImage(cfg.envMap);
-            ImageFormat(&ctx.envMap, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);
-        } else {
-            ctx.envMap.data = NULL; ctx.envMap.width = 0; ctx.envMap.height = 0;
-        }
-
+    if (cfg.tiles || cfg.warnock){
         if (cfg.textures_enabled) {
             ctx.texImage  = LoadImage(cfg.tex_diffuse);
             ImageFormat(&ctx.texImage,  PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);
@@ -241,6 +282,15 @@ int main(void)
         } else {
             ctx.texImage.data = NULL;
             ctx.normalMap.data = NULL;
+        }
+    }
+
+    if (cfg.tiles){
+        if (cfg.envMap_enable) {
+            ctx.envMap = LoadImage(cfg.envMap);
+            ImageFormat(&ctx.envMap, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);
+        } else {
+            ctx.envMap.data = NULL; ctx.envMap.width = 0; ctx.envMap.height = 0;
         }
 
         ctx.skyU = malloc(cfg.screen_width * cfg.screen_height * sizeof(float));
@@ -381,32 +431,14 @@ int main(void)
             p->tangent   = Vector3Normalize(Vector3Transform(tangentsOS[i],   rotation));
             p->bitangent = Vector3Normalize(Vector3Transform(bitangentsOS[i], rotation));
 
-            // Précalculs pour Warnock rendering
-            // PrecomputePolyLines
-            Vector2 _p[3] = {p->p0, p->p1, p->p2};
-            for (int i = 0; i < 3; i++) {
-                Vector2 pA = _p[i];
-                Vector2 pB = _p[(i + 1) % 3];
+            // __Précalculs pour Warnock rendering _________________________________________
+            PrecomputePolyLines(p);
 
-                // Vecteur normal pointant vers l'intérieur (si sens anti-horaire)
-                p->lines[i].A = -(pB.y - pA.y);
-                p->lines[i].B = pB.x - pA.x;
-                p->lines[i].C = -(p->lines[i].A * pA.x + p->lines[i].B * pA.y);
-            }
+            p->intensity = CalculateFlatShadingIntensity(&ctx, p, view);
 
-            //ComputePlaneEquation
-            Vector3 _v1 = {p->p1.x - p->p0.x, p->p1.y - p->p0.y, p->z1 - p->z0};
-            Vector3 _v2 = {p->p2.x - p->p0.x, p->p2.y - p->p0.y, p->z2 - p->z0};
+            ComputePlaneEquation(p);
 
-            // Produit vectoriel pour avoir la normale (A, B, C)
-            p->plane.A = _v1.y * _v2.z - _v1.z * _v2.y;
-            p->plane.B = _v1.z * _v2.x - _v1.x * _v2.z;
-            p->plane.C = _v1.x * _v2.y - _v1.y * _v2.x;
-            
-            // D = -(Ax0 + By0 + Cz0)
-            p->plane.D = -(p->plane.A * p->p0.x + 
-                            p->plane.B * p->p0.y + 
-                            p->plane.C * p->z0);
+            ComputeUVEquations(p);
             // -----------------------------------------------------------------------------
 
             p->couleur = PolyList[i].couleur;           

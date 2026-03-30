@@ -1,6 +1,22 @@
 #include "shading.h"
 #include <math.h>
 
+float CalculateFlatShadingIntensity(RenderContext* ctx, Poly* p, Matrix view) {
+    Vector3 v0 = Vector3Transform(p->v0, view);
+    Vector3 v1 = Vector3Transform(p->v1, view);
+    Vector3 v2 = Vector3Transform(p->v2, view);
+
+    Vector3 e1 = Vector3Subtract(v1, v0);
+    Vector3 e2 = Vector3Subtract(v2, v0);
+
+    Vector3 normal = Vector3CrossProduct(e1, e2);
+    normal = Vector3Normalize(normal);
+
+    float intensity = Vector3DotProduct(normal, ctx->lightDir);
+    float ambient   = ctx->ambient;
+    return fmaxf(intensity, ambient); 
+}
+
 void flatShading(RenderContext* ctx, Poly* p, Matrix view)
 {
     Vector3 v0 = Vector3Transform(p->v0, view);

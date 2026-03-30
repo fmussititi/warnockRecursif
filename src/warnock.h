@@ -13,6 +13,7 @@ int  region_fully_covered(Region* R, Poly* tri);
 static inline float GetZAt(Poly* tri, float x, float y);
 static bool isADevantB(Region* R, Poly* A, Poly* B);
 static int isFrontMost(Region* R, Poly* A, Poly* polys, int* indices, int count);
+void DrawTexturedRegion(RenderContext* ctx, Region* R, Poly* tri);
 void drawRegionZBuffer(RenderContext* ctx, Region* R, Poly* polys, int* indices, int count);
 void warnock(RenderContext* ctx, Region* R, int* indices, int count, int depth);
 

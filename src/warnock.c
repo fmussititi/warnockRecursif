@@ -174,6 +174,47 @@ static int isFrontMost(Region* R, Poly* A, Poly* polys, int* indices, int count)
     return 1;
 }
 
+void DrawTexturedRegion(RenderContext* ctx, Region* R, Poly* tri) {
+    const Color* texPixels = (Color*)ctx->texImage.data;
+    int texW = ctx->texImage.width;
+    int texH = ctx->texImage.height;
+
+    for (int y = R->y1; y < R->y2; y++) {
+        int fbY = ctx->screenHeight - y;
+        if (fbY < 0 || fbY >= ctx->screenHeight) continue;
+
+        float currentU = tri->eqU.a * (R->x1 + 0.5f) + tri->eqU.b * (y + 0.5f) + tri->eqU.c;
+        float currentV = tri->eqV.a * (R->x1 + 0.5f) + tri->eqV.b * (y + 0.5f) + tri->eqV.c;
+
+        for (int x = R->x1; x < R->x2; x++) {
+            // 1. Gestion du wrapping (répétition de la texture)
+            // On utilise floorf pour gérer correctement les nombres négatifs
+            int tx = (int)((currentU - floorf(currentU)) * texW);
+            int ty = (int)((currentV - floorf(currentV)) * texH);
+
+            // 2. Sécurité ultime (Clamping) pour éviter le pixel exact sur la bordure droite/basse
+            if (tx < 0) tx = 0; if (tx >= texW) tx = texW - 1;
+            if (ty < 0) ty = 0; if (ty >= texH) ty = texH - 1;
+
+            Color texCol = texPixels[ty * texW + tx];
+
+            // --- APPLICATION DU FLAT SHADING ---
+            // On module la couleur de la texture par l'intensité
+            texCol.r = (unsigned char)(texCol.r * tri->intensity);
+            texCol.g = (unsigned char)(texCol.g * tri->intensity);
+            texCol.b = (unsigned char)(texCol.b * tri->intensity);
+            
+            // On vérifie que le pixel écran est bien dans le framebuffer
+            if (x >= 0 && x < ctx->screenWidth) {
+                framebuffer[fbY * ctx->screenWidth + x] = texCol;
+            }
+
+            currentU += tri->eqU.a;
+            currentV += tri->eqV.a;
+        }
+    }
+}
+
 void warnock(RenderContext* ctx, Region* R, int* indices, int count, int depth)
 {
     if (!R) return;
@@ -197,7 +238,10 @@ void warnock(RenderContext* ctx, Region* R, int* indices, int count, int depth)
         if(ctx->hybride)
             drawRegionZBuffer(ctx, R, ctx->polys, indices, count);
         else
-            DrawRectangleFramebuffer(ctx, left, top, width, height, ctx->polys[indices[best]].couleur);
+            if (ctx->texImage.data==NULL)
+                DrawRectangleFramebuffer(ctx, left, top, width, height, ctx->polys[indices[best]].couleur);
+            else 
+                DrawTexturedRegion(ctx, R, &ctx->polys[indices[best]]);
         return;
     }
 
@@ -226,9 +270,12 @@ void warnock(RenderContext* ctx, Region* R, int* indices, int count, int depth)
         Poly* A = &ctx->polys[localIndices[0]];
         // Le triangle couvre tout le rectangle → on peut remplir
         if (region_fully_covered(R, A)) {            
-            DrawRectangleFramebuffer(ctx, left, top, width, height, A->couleur);
-            //DrawRectangle(left, top, width, height, A->couleur);
+            if (ctx->texImage.data==NULL)
+                DrawRectangleFramebuffer(ctx, left, top, width, height, A->couleur);
+            else 
+                DrawTexturedRegion(ctx, R, A);
             return;
+            //DrawRectangle(left, top, width, height, A->couleur);
         }        
         // Le triangle ne couvre qu'une partie → on subdivise
     }
@@ -236,8 +283,12 @@ void warnock(RenderContext* ctx, Region* R, int* indices, int count, int depth)
     for (int i = 0; i < localCount; i++) {
         Poly* A = &ctx->polys[localIndices[i]];
         if (region_fully_covered(R, A) && isFrontMost(R, A, ctx->polys, localIndices, localCount)) {
-            //DrawRectangle(left, top, width, height, A->couleur);
-            DrawRectangleFramebuffer(ctx, left, top, width, height, A->couleur);
+            //DrawRectangle(left, top, width, height, A->couleur);            
+
+            if (ctx->texImage.data==NULL)
+                DrawRectangleFramebuffer(ctx, left, top, width, height, A->couleur);
+            else 
+                DrawTexturedRegion(ctx, R, A);
             return;
         }
     }
