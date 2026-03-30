@@ -127,40 +127,49 @@ void drawRegionZBuffer(RenderContext* ctx, Region* r, Poly* polys, int* indices,
     }
 }
 
-static int isBehindPlane(Poly* A, Poly* B)
-{
-    Vector3 A0 = {A->p0.x, A->p0.y, A->z0};
-    Vector3 A1 = {A->p1.x, A->p1.y, A->z1};
-    Vector3 A2 = {A->p2.x, A->p2.y, A->z2};
-    Vector3 u  = Vector3Subtract(A1, A0);
-    Vector3 v  = Vector3Subtract(A2, A0);
-    Vector3 n  = Vector3CrossProduct(u, v);
+static inline float GetZAt(Poly* tri, float x, float y) {
+    // Si le triangle est vertical (C proche de 0), on retourne une valeur par défaut
+    if (fabsf(tri->plane.C) < 1e-6f) return tri->zmin;
+    
+    // z = -(Ax + By + D) / C
+    return -(tri->plane.A * x + tri->plane.B * y + tri->plane.D) / tri->plane.C;
+}
 
-    Vector3 Bp[3] = {
-        {B->p0.x, B->p0.y, B->z0},
-        {B->p1.x, B->p1.y, B->z1},
-        {B->p2.x, B->p2.y, B->z2}
-    };
-    for (int i = 0; i < 3; i++) {
-        Vector3 w = Vector3Subtract(Bp[i], A0);
-        if (Vector3DotProduct(n, w) > 0) return 0;
+static bool isADevantB(Region* r, Poly* A, Poly* B) {
+    // Test rapide : si la boîte Z de A est devant B, pas besoin de calculs de plans
+    if (A->zmax < B->zmin) return true;
+    // Si la boîte Z de B est devant A, A ne peut pas être devant
+    if (B->zmax < A->zmin) return false;
+
+    // Test des 4 coins de la région
+    float cornersX[4] = {(float)r->x1, (float)r->x2, (float)r->x1, (float)r->x2};
+    float cornersY[4] = {(float)r->y1, (float)r->y1, (float)r->y2, (float)r->y2};
+
+    for (int i = 0; i < 4; i++) {
+        float zA = GetZAt(A, cornersX[i], cornersY[i]);
+        float zB = GetZAt(B, cornersX[i], cornersY[i]);
+
+        // Si à n'importe quel coin le Z de A est derrière celui de B, 
+        // A n'est pas "FrontMost" (ou ils s'intersectent).
+        if (zA > zB) return false;
     }
-    return 1;
+
+    return true;
 }
 
-static int hides(Poly* A, Poly* B) {
-    // test rapide z
-    if (A->zmax < B->zmin) return 1;
-    //else if (isBehindPlane(A, B)) return 1;
-    else return 0;
-}
 
-static int isFrontMost(Poly* A, Poly* polys, int* indices, int count)
+static int isFrontMost(Region* r, Poly* A, Poly* polys, int* indices, int count)
 {
     for (int i = 0; i < count; i++) {
         Poly* B = &polys[indices[i]];
+
         if (B == A) continue;
-        if (!hides(A, B)) return 0;
+
+        // Si A n'est pas devant B sur toute la surface du rectangle r,
+        // on renvoie 0 (ce qui forcera Warnock à subdiviser)
+        if (!isADevantB(r, A, B)) {
+            return 0;
+        }
     }
     return 1;
 }
@@ -226,7 +235,7 @@ void warnock(RenderContext* ctx, Region* r, int* indices, int count, int depth)
 
     for (int i = 0; i < localCount; i++) {
         Poly* A = &ctx->polys[localIndices[i]];
-        if (region_fully_covered(r, A) && isFrontMost(A, ctx->polys, localIndices, localCount)) {
+        if (region_fully_covered(r, A) && isFrontMost(r, A, ctx->polys, localIndices, localCount)) {
             //DrawRectangle(left, top, width, height, A->couleur);
             DrawRectangleFramebuffer(ctx, left, top, width, height, A->couleur);
             return;

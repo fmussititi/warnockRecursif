@@ -7,6 +7,10 @@ typedef struct {
     float A, B, C; // Représente Ax + By + C = 0
 } EdgeLine;
 
+typedef struct {
+    float A, B, C, D;
+} PlaneEq;
+
 typedef struct poly
 {
     bool visible;
@@ -30,6 +34,7 @@ typedef struct poly
     Vector3 bitangent;  // vecteur B
 
     EdgeLine lines[3]; // Pré-calculé
+    PlaneEq plane;
 
     Color couleur;
 } Poly;

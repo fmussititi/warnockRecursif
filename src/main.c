@@ -381,7 +381,8 @@ int main(void)
             p->tangent   = Vector3Normalize(Vector3Transform(tangentsOS[i],   rotation));
             p->bitangent = Vector3Normalize(Vector3Transform(bitangentsOS[i], rotation));
 
-            //PrecomputePolyLines
+            // Précalculs pour Warnock rendering
+            // PrecomputePolyLines
             Vector2 _p[3] = {p->p0, p->p1, p->p2};
             for (int i = 0; i < 3; i++) {
                 Vector2 pA = _p[i];
@@ -392,6 +393,21 @@ int main(void)
                 p->lines[i].B = pB.x - pA.x;
                 p->lines[i].C = -(p->lines[i].A * pA.x + p->lines[i].B * pA.y);
             }
+
+            //ComputePlaneEquation
+            Vector3 _v1 = {p->p1.x - p->p0.x, p->p1.y - p->p0.y, p->z1 - p->z0};
+            Vector3 _v2 = {p->p2.x - p->p0.x, p->p2.y - p->p0.y, p->z2 - p->z0};
+
+            // Produit vectoriel pour avoir la normale (A, B, C)
+            p->plane.A = _v1.y * _v2.z - _v1.z * _v2.y;
+            p->plane.B = _v1.z * _v2.x - _v1.x * _v2.z;
+            p->plane.C = _v1.x * _v2.y - _v1.y * _v2.x;
+            
+            // D = -(Ax0 + By0 + Cz0)
+            p->plane.D = -(p->plane.A * p->p0.x + 
+                            p->plane.B * p->p0.y + 
+                            p->plane.C * p->z0);
+            // -----------------------------------------------------------------------------
 
             p->couleur = PolyList[i].couleur;           
             if (cfg.warnock){ 
