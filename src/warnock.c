@@ -253,11 +253,8 @@ void warnock(RenderContext* ctx, Region* R, int* indices, int count, int depth)
         if (localCount >= ctx->max_poly) break;
         if (!ctx->polys[idx].visible) continue;
 
-        bool overlaps = (width > 20 && height > 20)
-            ? AABBOverlap(R, &ctx->polys[idx])
-            : TriangleIntersectsRegion(R, &ctx->polys[idx]);
-
-        if (overlaps) localIndices[localCount++] = idx;
+        if (TriangleIntersectsRegion(R, &ctx->polys[idx]))
+            localIndices[localCount++] = idx;
     }
 
     if (localCount == 0) {
@@ -270,7 +267,7 @@ void warnock(RenderContext* ctx, Region* R, int* indices, int count, int depth)
         Poly* A = &ctx->polys[localIndices[0]];
         // Le triangle couvre tout le rectangle → on peut remplir
         if (region_fully_covered(R, A)) {            
-            if (ctx->texImage.data==NULL)
+            if (ctx->texImage.data==NULL || ctx->hybride)
                 DrawRectangleFramebuffer(ctx, left, top, width, height, A->couleur);
             else 
                 DrawTexturedRegion(ctx, R, A);
@@ -285,7 +282,7 @@ void warnock(RenderContext* ctx, Region* R, int* indices, int count, int depth)
         if (region_fully_covered(R, A) && isFrontMost(R, A, ctx->polys, localIndices, localCount)) {
             //DrawRectangle(left, top, width, height, A->couleur);            
 
-            if (ctx->texImage.data==NULL)
+            if (ctx->texImage.data==NULL || ctx->hybride)
                 DrawRectangleFramebuffer(ctx, left, top, width, height, A->couleur);
             else 
                 DrawTexturedRegion(ctx, R, A);

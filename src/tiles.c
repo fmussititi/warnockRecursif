@@ -32,7 +32,6 @@ void binTriangles(RenderContext* ctx)
                     (tx+1) * ctx->tile_size,   (ty+1) * ctx->tile_size
                 };
 
-                if (!AABBOverlap(&myTile, p))              continue;
                 if (!TriangleIntersectsRegion(&myTile, p)) continue;
 
                 tile->indices[tile->count++] = i;
