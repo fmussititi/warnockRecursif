@@ -65,6 +65,14 @@ int region_fully_covered(Region* R, Poly* tri) {
     return 1;
 }
 
+// Retourne la plus grande dimension de la région (en pixels)
+int RegionSize(Region* R) {
+    int width = R->x2 - R->x1;
+    int height = R->y2 - R->y1;
+    
+    return (width > height) ? width : height;
+}
+
 void drawRegionZBuffer(RenderContext* ctx, Region* R, Poly* polys, int* indices, int count)
 {
     int width  = R->x2 - R->x1;
@@ -258,6 +266,7 @@ void DrawNormalMappedRegion(RenderContext* ctx, Region* R, Poly* tri) {
                 T.y * tangentN.x + B.y * tangentN.y + interpolatedN.y * tangentN.z,
                 T.z * tangentN.x + B.z * tangentN.y + interpolatedN.z * tangentN.z
             };
+            pixelNormal = Vector3Normalize(Vector3Negate(pixelNormal));
 
             // 5. Light
             float dot = Vector3DotProduct(Vector3Normalize(pixelNormal), ctx->lightDir);
@@ -419,8 +428,9 @@ void warnock(RenderContext* ctx, Region* R, int* indices, int count, int depth)
     int top    = ctx->screenHeight - R->y2;
     int width  = R->x2 - R->x1;
     int height = R->y2 - R->y1;
+    int size = RegionSize(R);
 
-    if (depth >= ctx->tree_depth) {
+    if (depth >= ctx->tree_depth || size <= 1) {
         int best = 0;
         float z = ctx->polys[indices[0]].zmin;
 
@@ -436,8 +446,10 @@ void warnock(RenderContext* ctx, Region* R, int* indices, int count, int depth)
         else
             if (ctx->texImage.data==NULL)
                 DrawRectangleFramebuffer(ctx, left, top, width, height, ctx->polys[indices[best]].couleur);
-            else 
-                DrawFullShaderRegion(ctx, R, &ctx->polys[indices[best]]);
+            else{ 
+                Poly* A = &ctx->polys[indices[best]];
+                DrawFullShaderRegion(ctx, R, A);             
+            }
         return;
     }
 
@@ -466,7 +478,18 @@ void warnock(RenderContext* ctx, Region* R, int* indices, int count, int depth)
             if (ctx->texImage.data==NULL || ctx->hybride)
                 DrawRectangleFramebuffer(ctx, left, top, width, height, A->couleur);
             else 
-                DrawFullShaderRegion(ctx, R, A);
+                if (size <= 1) {
+                    // Très petite zone : Shader ultra rapide (Gouraud ou Flat)
+                    DrawTexturedRegion(ctx, R, A);
+                } 
+                else if (size <= 2) {
+                    // Zone moyenne : Phong shading sans Normal Map
+                    DrawNormalMappedRegion(ctx, R, A);
+                } 
+                else {
+                    // Grande zone : Shader complet (Normal Mapping + Specular)
+                    DrawFullShaderRegion(ctx, R, A);
+                }
             return;
             //DrawRectangle(left, top, width, height, A->couleur);
         }        
@@ -481,7 +504,18 @@ void warnock(RenderContext* ctx, Region* R, int* indices, int count, int depth)
             if (ctx->texImage.data==NULL || ctx->hybride)
                 DrawRectangleFramebuffer(ctx, left, top, width, height, A->couleur);
             else 
-                DrawFullShaderRegion(ctx, R, A);
+                if (size <= 1) {
+                    // Très petite zone : Shader ultra rapide (Gouraud ou Flat)
+                    DrawTexturedRegion(ctx, R, A);
+                } 
+                else if (size <= 2) {
+                    // Zone moyenne : Phong shading sans Normal Map
+                    DrawNormalMappedRegion(ctx, R, A);
+                } 
+                else {
+                    // Grande zone : Shader complet (Normal Mapping + Specular)
+                    DrawFullShaderRegion(ctx, R, A);
+                }
             return;
         }
     }
