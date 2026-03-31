@@ -7,6 +7,9 @@
 #include "utils.h"
 
 void subdivise(Region* R, Region regions[4]);
+static inline float cross_product_2d(float x, float y, float x1, float y1, float x2, float y2);
+bool IsPointInTriangle(float px, float py, Poly* p);
+static inline bool IsRegionOutsideEdge(Region* R, EdgeLine* e);
 bool TriangleIntersectsRegion(Region* R, Poly* tri);
 bool AABBOverlap(Region* R, Poly* p);
 int  region_fully_covered(Region* R, Poly* tri);

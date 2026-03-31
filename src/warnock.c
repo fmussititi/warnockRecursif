@@ -3,12 +3,38 @@
 #include "globals.h"
 #include <math.h>
 #include <stdbool.h>
+#include <stdio.h>
 
 void subdivise(Region* R, Region regions[4]) {
     regions[0] = (Region){R->x1,             (R->y1+R->y2)/2, (R->x1+R->x2)/2, R->y2};
     regions[1] = (Region){(R->x1+R->x2)/2,   (R->y1+R->y2)/2, R->x2,           R->y2};
     regions[2] = (Region){R->x1,             R->y1,           (R->x1+R->x2)/2, (R->y1+R->y2)/2};
     regions[3] = (Region){(R->x1+R->x2)/2,   R->y1,           R->x2,           (R->y1+R->y2)/2};
+}
+
+// Fonction utilitaire pour le calcul du produit vectoriel 2D
+static inline float cross_product_2d(float x, float y, float x1, float y1, float x2, float y2) {
+    return (x - x2) * (y1 - y2) - (x1 - x2) * (y - y2);
+}
+
+bool IsPointInTriangle(float px, float py, Poly* p) {
+    // Utilisation impérative des coordonnées SCREEN (pixels)
+    float x1 = p->p0.x, y1 = p->p0.y;
+    float x2 = p->p1.x, y2 = p->p1.y;
+    float x3 = p->p2.x, y3 = p->p2.y;
+
+    // Méthode des coordonnées barycentriques (plus robuste)
+    float det = (y2 - y3) * (x1 - x3) + (x3 - x2) * (y1 - y3);
+    
+    if (fabsf(det) < 1e-6f) return false; // Triangle plat ou ligne
+
+    float a = ((y2 - y3) * (px - x3) + (x3 - x2) * (py - y3)) / det;
+    float b = ((y3 - y1) * (px - x3) + (x1 - x3) * (py - y3)) / det;
+    float c = 1.0f - a - b;
+
+    // On accepte une petite marge (epsilon) pour éviter les trous aux jointures
+    float eps = 0.001f;
+    return (a >= -eps && b >= -eps && c >= -eps);
 }
 
 // Fonction utilitaire pour tester si un rectangle est du côté "extérieur" d'une arête
@@ -445,61 +471,85 @@ void warnock(RenderContext* ctx, Region* R, int* indices, int count, int depth)
     int top    = ctx->screenHeight - R->y2;
     int width  = R->x2 - R->x1;
     int height = R->y2 - R->y1;
+
     int size = RegionSize(R);
+    int myStart = ctx->poolCursor;
 
-    if (depth >= ctx->tree_depth || size <= 1) {
-        int best = 0;
-        float z = ctx->polys[indices[0]].zmin;
+    if (depth >= ctx->tree_depth){// || size <= 1) {
+        // 1. Trouver le centre du rectangle (ou du pixel)
+        float centerX = R->x1 + (R->x2 - R->x1) * 0.5f;
+        float centerY = R->y1 + (R->y2 - R->y1) * 0.5f;
 
-        for (int i = 1; i < count; i++)
-        {
-            if (ctx->polys[indices[i]].zmin < z){
-                z = ctx->polys[indices[i]].zmin;
-                best = i;
+        int bestIdx = -1;
+        float minZ = 1e10f; // Infini
+
+        // 2. Chercher le triangle le plus proche qui contient ce centre
+        for (int i = 0; i < count; i++) {
+            Poly* p = &ctx->polys[indices[i]];
+            
+            // Test d'appartenance du point au triangle (2D)
+            if (IsPointInTriangle(centerX, centerY, p)) {
+                // Calcul du Z au point précis (interpolation barycentrique ou plan)
+                float currentZ = GetZAt(p, centerX, centerY); 
+                
+                if (currentZ < minZ) {
+                    minZ = currentZ;
+                    bestIdx = indices[i];
+                }
             }
         }
-        if(ctx->hybride)
-            drawRegionZBuffer(ctx, R, ctx->polys, indices, count);
-        else
-            if (ctx->texImage.data==NULL & ctx->normalMap.data==NULL)
-                DrawRectangleFramebuffer(ctx, left, top, width, height, ctx->polys[indices[best]].couleur);
-            else{ 
-                Poly* A = &ctx->polys[indices[best]];
-                DrawFullShaderRegion(ctx, R, A);             
-            }
+
+        // 3. Dessiner seulement si un triangle couvre le centre
+        if (bestIdx != -1) {
+            Poly* A = &ctx->polys[bestIdx];
+            if(ctx->hybride)
+                drawRegionZBuffer(ctx, R, ctx->polys, indices, count);
+            else
+                if (ctx->texImage.data==NULL & ctx->normalMap.data==NULL)
+                    DrawRectangleFramebuffer(ctx, left, top, width, height, A->couleur);
+                else           
+                    DrawFullShaderRegion(ctx, R, A);
+        }
+        ctx->poolCursor = myStart; // Libère l'espace utilisé par cet appel
         return;
     }
 
-    int localIndices[ctx->max_poly];
     int localCount = 0;
 
     for (int i = 0; i < count; i++) {
         int idx = indices[i];
-        if (localCount >= ctx->max_poly) break;
+        // Sécurité pour ne pas dépasser le buffer total
+        if (ctx->poolCursor >= ctx->max_pool_size) break;
         if (!ctx->polys[idx].visible) continue;
 
-        if (TriangleIntersectsRegion(R, &ctx->polys[idx]))
-            localIndices[localCount++] = idx;
+        if (TriangleIntersectsRegion(R, &ctx->polys[idx])){
+            indexPool[ctx->poolCursor++] = idx;
+            localCount++;
+        }
     }
+
+    // On passe le pointeur vers le début de NOS indices locaux dans le pool
+    int* myIndices = &indexPool[myStart];
 
     if (localCount == 0) {
         //DrawRectangleLines(left, top, width, height, RED);
-        DrawRectangleLinesFramebuffer(ctx, left, top, width, height, RED);
+        if (ctx->contour_arbre) DrawRectangleLinesFramebuffer(ctx, left, top, width, height, BLACK);
+        ctx->poolCursor = myStart; // Libère l'espace utilisé par cet appel
         return;
     }
 
     if (localCount == 1) {
-        Poly* A = &ctx->polys[localIndices[0]];
+        Poly* A = &ctx->polys[myIndices[0]];
         // Le triangle couvre tout le rectangle → on peut remplir
         if (region_fully_covered(R, A)) {            
             if ((ctx->texImage.data==NULL & ctx->normalMap.data==NULL) || ctx->hybride)
                 DrawRectangleFramebuffer(ctx, left, top, width, height, A->couleur);
             else 
-                if (size <= 1) {
+                if (size <= 0) {
                     // Très petite zone : Shader ultra rapide (Gouraud ou Flat)
                     DrawTexturedRegion(ctx, R, A);
                 } 
-                else if (size <= 2) {
+                else if (size <= 1) {
                     // Zone moyenne : Phong shading sans Normal Map
                     DrawNormalMappedRegion(ctx, R, A);
                 } 
@@ -507,6 +557,7 @@ void warnock(RenderContext* ctx, Region* R, int* indices, int count, int depth)
                     // Grande zone : Shader complet (Normal Mapping + Specular)
                     DrawFullShaderRegion(ctx, R, A);
                 }
+            ctx->poolCursor = myStart; // Libère l'espace utilisé par cet appel
             return;
             //DrawRectangle(left, top, width, height, A->couleur);
         }        
@@ -514,18 +565,18 @@ void warnock(RenderContext* ctx, Region* R, int* indices, int count, int depth)
     }
 
     for (int i = 0; i < localCount; i++) {
-        Poly* A = &ctx->polys[localIndices[i]];
-        if (region_fully_covered(R, A) && isFrontMost(R, A, ctx->polys, localIndices, localCount)) {
+        Poly* A = &ctx->polys[myIndices[i]];
+        if (region_fully_covered(R, A) && isFrontMost(R, A, ctx->polys, myIndices, localCount)) {
             //DrawRectangle(left, top, width, height, A->couleur);            
 
             if ((ctx->texImage.data==NULL & ctx->normalMap.data==NULL) || ctx->hybride)
                 DrawRectangleFramebuffer(ctx, left, top, width, height, A->couleur);
             else 
-                if (size <= 1) {
+                if (size <= 0) {
                     // Très petite zone : Shader ultra rapide (Gouraud ou Flat)
                     DrawTexturedRegion(ctx, R, A);
                 } 
-                else if (size <= 2) {
+                else if (size <= 1) {
                     // Zone moyenne : Phong shading sans Normal Map
                     DrawNormalMappedRegion(ctx, R, A);
                 } 
@@ -533,6 +584,7 @@ void warnock(RenderContext* ctx, Region* R, int* indices, int count, int depth)
                     // Grande zone : Shader complet (Normal Mapping + Specular)
                     DrawFullShaderRegion(ctx, R, A);
                 }
+            ctx->poolCursor = myStart; // Libère l'espace
             return;
         }
     }
@@ -540,5 +592,10 @@ void warnock(RenderContext* ctx, Region* R, int* indices, int count, int depth)
     Region regions[4];
     subdivise(R, regions);
     for (int i = 0; i < 4; i++)
-        warnock(ctx, &regions[i], localIndices, localCount, depth + 1);
+        warnock(ctx, &regions[i], myIndices, localCount, depth + 1);
+
+    // --- 5. NETTOYAGE CRUCIAL ---
+    // Une fois que les 4 enfants ont fini, on remet le curseur là où il était
+    // pour que les autres branches de l'arbre réutilisent cet espace.
+    ctx->poolCursor = myStart;
 }

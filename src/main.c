@@ -169,7 +169,10 @@ int main(void)
     }
 
     if (cfg.zbuffer || cfg.tiles)
-        zbuffer = malloc(cfg.screen_width * cfg.screen_height * sizeof(float));        
+        zbuffer = malloc(cfg.screen_width * cfg.screen_height * sizeof(float)); 
+        
+    if (cfg.warnock)
+        indexPool = (int*)malloc(sizeof(int) * cfg.max_pool_size);
 
     // ── Caméra ────────────────────────────────────────────────────────────────
     Camera3D camera = { 0 };
@@ -189,7 +192,7 @@ int main(void)
     ctx.screenWidth   = cfg.screen_width;
     ctx.tree_depth    = cfg.tree_depth;
     ctx.contour_arbre = cfg.contour_arbre;
-    ctx.max_poly      = cfg.max_poly;
+    ctx.max_pool_size = cfg.max_pool_size;
     ctx.hybride       = cfg.hybride;
     ctx.ambient       = cfg.ambient;
     ctx.diffuse       = cfg.diffuse;
@@ -582,12 +585,12 @@ int main(void)
 
         if (cfg.warnock) {            
             Region root = {0, 0, cfg.screen_width, cfg.screen_height};
-            int indices[cfg.max_poly];
-            for (int i = 0; i < polyCount; i++) indices[i] = i;
-            ctx.rootIndices = indices;
+            for (int i = 0; i < polyCount; i++) indexPool[i] = i;
+            
+            ctx.poolCursor = 0;
 
             clear_framebuffer(&ctx, (Color){ 20, 20, 30, 255 }); 
-            warnock(&ctx, &root, indices, polyCount, 0);
+            warnock(&ctx, &root, indexPool, polyCount, 0);
             UpdateTexture(tex, framebuffer);
             DrawTexture(tex, 0, 0, WHITE);
             DrawText(TextFormat("Warnock, depth=%d", cfg.tree_depth), 10, 10, 20, WHITE);
@@ -673,6 +676,7 @@ int main(void)
     }
 
     if (cfg.zbuffer || cfg.tiles) free(zbuffer);
+    if (cfg.warnock) free(indexPool);
     
     free(framebuffer);
     free(smoothNormals);

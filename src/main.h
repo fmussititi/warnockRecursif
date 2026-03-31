@@ -99,8 +99,9 @@ typedef struct {
     int* rootIndices;
     int tree_depth;
     int contour_arbre;
-    int max_poly;
+    int max_pool_size;
     int hybride;
+    int poolCursor;
 } RenderContext;
 
 typedef struct {

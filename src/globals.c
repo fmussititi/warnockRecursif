@@ -7,6 +7,7 @@ atomic_int tilesRemaining;
 Color* framebuffer   = NULL;
 Color* framebufferBlur = NULL;
 float* zbuffer       = NULL;
+int* indexPool       = NULL;
 
 ThreadData* threadsData = NULL;
 pthread_t*  threads    = NULL;
