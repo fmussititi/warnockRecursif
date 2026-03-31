@@ -393,12 +393,29 @@ void DrawFullShaderRegion(RenderContext* ctx, Region* R, Poly* tri)
 
             Color tex = texPixels[dty * ctx->texImage.width + dtx];
 
+            // Utilise spec (déjà calculé via LUT) comme masque de réflexion
+            // spec est déjà concentré au pic de lumière grâce à shininess
+            float reflectivity = specular * ctx->refl2; 
+
+            // Couleur du reflet (blanc = lumière spéculaire)
+            float reflR = 255.0f;
+            float reflG = 255.0f;
+            float reflB = 255.0f;
+
             // =======================
             // FINAL COLOR
             // =======================
-            float r = tex.r * lighting + tex.r * specular;
-            float g = tex.g * lighting + tex.g * specular;
-            float b = tex.b * lighting + tex.b * specular;
+            //float r = tex.r * lighting + tex.r * specular;
+            //float g = tex.g * lighting + tex.g * specular;
+            //float b = tex.b * lighting + tex.b * specular;
+            float r = tex.r * lighting;
+            float g = tex.g * lighting;
+            float b = tex.b * lighting;
+
+            // Mix : surface + reflet concentré au pic
+            r = r * (1.0f - reflectivity) + reflR * reflectivity;
+            g = g * (1.0f - reflectivity) + reflG * reflectivity;
+            b = b * (1.0f - reflectivity) + reflB * reflectivity;
 
             Color out = {
                 (unsigned char)fminf(r, 255.0f),
@@ -444,7 +461,7 @@ void warnock(RenderContext* ctx, Region* R, int* indices, int count, int depth)
         if(ctx->hybride)
             drawRegionZBuffer(ctx, R, ctx->polys, indices, count);
         else
-            if (ctx->texImage.data==NULL)
+            if (ctx->texImage.data==NULL & ctx->normalMap.data==NULL)
                 DrawRectangleFramebuffer(ctx, left, top, width, height, ctx->polys[indices[best]].couleur);
             else{ 
                 Poly* A = &ctx->polys[indices[best]];
@@ -475,7 +492,7 @@ void warnock(RenderContext* ctx, Region* R, int* indices, int count, int depth)
         Poly* A = &ctx->polys[localIndices[0]];
         // Le triangle couvre tout le rectangle → on peut remplir
         if (region_fully_covered(R, A)) {            
-            if (ctx->texImage.data==NULL || ctx->hybride)
+            if ((ctx->texImage.data==NULL & ctx->normalMap.data==NULL) || ctx->hybride)
                 DrawRectangleFramebuffer(ctx, left, top, width, height, A->couleur);
             else 
                 if (size <= 1) {
@@ -501,7 +518,7 @@ void warnock(RenderContext* ctx, Region* R, int* indices, int count, int depth)
         if (region_fully_covered(R, A) && isFrontMost(R, A, ctx->polys, localIndices, localCount)) {
             //DrawRectangle(left, top, width, height, A->couleur);            
 
-            if (ctx->texImage.data==NULL || ctx->hybride)
+            if ((ctx->texImage.data==NULL & ctx->normalMap.data==NULL) || ctx->hybride)
                 DrawRectangleFramebuffer(ctx, left, top, width, height, A->couleur);
             else 
                 if (size <= 1) {

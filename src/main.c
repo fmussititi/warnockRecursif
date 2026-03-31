@@ -84,12 +84,16 @@ void ComputeNormalEquations(Poly* tri) {
     tri->eqNz = SolveLinearEq(tri->p0, tri->p1, tri->p2, tri->n0.z, tri->n1.z, tri->n2.z);
 }
 
-void PreparePolyEquations(Poly* p) {
+void ComputePositionEquations(Poly* tri) {
     // Interpolation des positions 3D (Px, Py, Pz)
-    p->eqPx = SolveLinearEq(p->p0, p->p1, p->p2, p->v0.x, p->v1.x, p->v2.x);
-    p->eqPy = SolveLinearEq(p->p0, p->p1, p->p2, p->v0.y, p->v1.y, p->v2.y);
-    p->eqPz = SolveLinearEq(p->p0, p->p1, p->p2, p->v0.z, p->v1.z, p->v2.z);
-    
+    tri->eqPx = SolveLinearEq(tri->p0, tri->p1, tri->p2, tri->v0.x, tri->v1.x, tri->v2.x);
+    tri->eqPy = SolveLinearEq(tri->p0, tri->p1, tri->p2, tri->v0.y, tri->v1.y, tri->v2.y);
+    tri->eqPz = SolveLinearEq(tri->p0, tri->p1, tri->p2, tri->v0.z, tri->v1.z, tri->v2.z);
+}
+
+void PreparePolyEquations(Poly* p) {
+    ComputePositionEquations(p);
+
     PrecomputePolyLines(p);                
 
     ComputePlaneEquation(p);
@@ -433,7 +437,7 @@ int main(void)
             p->zmin = fminf(p->z0, fminf(p->z1, p->z2));
             p->zmax = fmaxf(p->z0, fmaxf(p->z1, p->z2));
 
-            // Bounding box pour le tiling
+            // Bounding box pour le tiling et warnock
             float minX = fminf(p->p0.x, fminf(p->p1.x, p->p2.x));
             float maxX = fmaxf(p->p0.x, fmaxf(p->p1.x, p->p2.x));
             float minY = fminf(p->p0.y, fminf(p->p1.y, p->p2.y));
@@ -446,11 +450,13 @@ int main(void)
 
             if (p->maxX < p->minX || p->maxY < p->minY) continue;
 
-            // Calcul des tuiles
-            p->tileMinX = (int)(p->minX) / ctx.tile_size;
-            p->tileMaxX = (int)(p->maxX) / ctx.tile_size;
-            p->tileMinY = (int)(p->minY) / ctx.tile_size;
-            p->tileMaxY = (int)(p->maxY) / ctx.tile_size;
+            if (cfg.tiles) {
+                // Calcul des tuiles
+                p->tileMinX = (int)(p->minX) / ctx.tile_size;
+                p->tileMaxX = (int)(p->maxX) / ctx.tile_size;
+                p->tileMinY = (int)(p->minY) / ctx.tile_size;
+                p->tileMaxY = (int)(p->maxY) / ctx.tile_size;
+            }
 
             // UVs (utilisent les index uniques)
             p->uv0 = getUV(mesh, idx[0]);
