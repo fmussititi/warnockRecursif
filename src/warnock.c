@@ -471,131 +471,112 @@ void warnock(RenderContext* ctx, Region* R, int* indices, int count, int depth)
     int top    = ctx->screenHeight - R->y2;
     int width  = R->x2 - R->x1;
     int height = R->y2 - R->y1;
-
-    int size = RegionSize(R);
+    int size   = RegionSize(R);
     int myStart = ctx->poolCursor;
 
-    if (depth >= ctx->tree_depth){// || size <= 1) {
-        // 1. Trouver le centre du rectangle (ou du pixel)
+    // ── CAS FEUILLE ───────────────────────────────────────────────────────────
+    if (depth >= ctx->tree_depth) {
         float centerX = R->x1 + (R->x2 - R->x1) * 0.5f;
         float centerY = R->y1 + (R->y2 - R->y1) * 0.5f;
 
-        int bestIdx = -1;
-        float minZ = 1e10f; // Infini
+        int   bestIdx = -1;
+        float minZ    = 1e10f;
 
-        // 2. Chercher le triangle le plus proche qui contient ce centre
         for (int i = 0; i < count; i++) {
             Poly* p = &ctx->polys[indices[i]];
-            
-            // Test d'appartenance du point au triangle (2D)
             if (IsPointInTriangle(centerX, centerY, p)) {
-                // Calcul du Z au point précis (interpolation barycentrique ou plan)
-                float currentZ = GetZAt(p, centerX, centerY); 
-                
+                float currentZ = GetZAt(p, centerX, centerY);
                 if (currentZ < minZ) {
-                    minZ = currentZ;
+                    minZ    = currentZ;
                     bestIdx = indices[i];
                 }
             }
         }
 
-        // 3. Dessiner seulement si un triangle couvre le centre
         if (bestIdx != -1) {
             Poly* A = &ctx->polys[bestIdx];
-            if(ctx->hybride)
+            if (ctx->hybride) {
                 drawRegionZBuffer(ctx, R, ctx->polys, indices, count);
-            else
-                if (ctx->texImage.data==NULL & ctx->normalMap.data==NULL)
-                    DrawRectangleFramebuffer(ctx, left, top, width, height, A->couleur);
-                else           
-                    DrawFullShaderRegion(ctx, R, A);
+            } else if (ctx->texImage.data == NULL && ctx->normalMap.data == NULL) {
+                DrawRectangleFramebuffer(ctx, left, top, width, height, A->couleur);
+            } else {
+                DrawFullShaderRegion(ctx, R, A);
+            }
         }
-        ctx->poolCursor = myStart; // Libère l'espace utilisé par cet appel
+
+        ctx->poolCursor = myStart;
         return;
     }
 
+    // ── FILTRAGE des triangles qui intersectent R ─────────────────────────────
     int localCount = 0;
 
     for (int i = 0; i < count; i++) {
         int idx = indices[i];
-        // Sécurité pour ne pas dépasser le buffer total
         if (ctx->poolCursor >= ctx->max_pool_size) break;
         if (!ctx->polys[idx].visible) continue;
-
-        if (TriangleIntersectsRegion(R, &ctx->polys[idx])){
+        if (TriangleIntersectsRegion(R, &ctx->polys[idx])) {
             indexPool[ctx->poolCursor++] = idx;
             localCount++;
         }
     }
 
-    // On passe le pointeur vers le début de NOS indices locaux dans le pool
-    int* myIndices = &indexPool[myStart];
+    int* myIndices  = &indexPool[myStart];
+    int  childStart = myStart + localCount;  // ← zone réservée pour les enfants
 
+    // ── CAS VIDE ──────────────────────────────────────────────────────────────
     if (localCount == 0) {
-        //DrawRectangleLines(left, top, width, height, RED);
-        if (ctx->contour_arbre) DrawRectangleLinesFramebuffer(ctx, left, top, width, height, BLACK);
-        ctx->poolCursor = myStart; // Libère l'espace utilisé par cet appel
+        if (ctx->contour_arbre)
+            DrawRectangleLinesFramebuffer(ctx, left, top, width, height, BLACK);
+        ctx->poolCursor = myStart;
         return;
     }
 
+    // ── CAS 1 TRIANGLE ───────────────────────────────────────────────────────
     if (localCount == 1) {
         Poly* A = &ctx->polys[myIndices[0]];
-        // Le triangle couvre tout le rectangle → on peut remplir
-        if (region_fully_covered(R, A)) {            
-            if ((ctx->texImage.data==NULL & ctx->normalMap.data==NULL) || ctx->hybride)
+        if (region_fully_covered(R, A)) {
+            if ((ctx->texImage.data == NULL && ctx->normalMap.data == NULL) || ctx->hybride) {
                 DrawRectangleFramebuffer(ctx, left, top, width, height, A->couleur);
-            else 
-                if (size <= 0) {
-                    // Très petite zone : Shader ultra rapide (Gouraud ou Flat)
-                    DrawTexturedRegion(ctx, R, A);
-                } 
-                else if (size <= 1) {
-                    // Zone moyenne : Phong shading sans Normal Map
-                    DrawNormalMappedRegion(ctx, R, A);
-                } 
-                else {
-                    // Grande zone : Shader complet (Normal Mapping + Specular)
-                    DrawFullShaderRegion(ctx, R, A);
-                }
-            ctx->poolCursor = myStart; // Libère l'espace utilisé par cet appel
+            } else if (size <= 0) {
+                DrawTexturedRegion(ctx, R, A);
+            } else if (size <= 1) {
+                DrawNormalMappedRegion(ctx, R, A);
+            } else {
+                DrawFullShaderRegion(ctx, R, A);
+            }
+            ctx->poolCursor = myStart;
             return;
-            //DrawRectangle(left, top, width, height, A->couleur);
-        }        
-        // Le triangle ne couvre qu'une partie → on subdivise
+        }
+        // Pas couvert entièrement → on subdivise
     }
 
+    // ── CAS TRIVIAL : triangle devant et couvre toute la région ──────────────
     for (int i = 0; i < localCount; i++) {
         Poly* A = &ctx->polys[myIndices[i]];
         if (region_fully_covered(R, A) && isFrontMost(R, A, ctx->polys, myIndices, localCount)) {
-            //DrawRectangle(left, top, width, height, A->couleur);            
-
-            if ((ctx->texImage.data==NULL & ctx->normalMap.data==NULL) || ctx->hybride)
+            if ((ctx->texImage.data == NULL && ctx->normalMap.data == NULL) || ctx->hybride) {
                 DrawRectangleFramebuffer(ctx, left, top, width, height, A->couleur);
-            else 
-                if (size <= 0) {
-                    // Très petite zone : Shader ultra rapide (Gouraud ou Flat)
-                    DrawTexturedRegion(ctx, R, A);
-                } 
-                else if (size <= 1) {
-                    // Zone moyenne : Phong shading sans Normal Map
-                    DrawNormalMappedRegion(ctx, R, A);
-                } 
-                else {
-                    // Grande zone : Shader complet (Normal Mapping + Specular)
-                    DrawFullShaderRegion(ctx, R, A);
-                }
-            ctx->poolCursor = myStart; // Libère l'espace
+            } else if (size <= 0) {
+                DrawTexturedRegion(ctx, R, A);
+            } else if (size <= 1) {
+                DrawNormalMappedRegion(ctx, R, A);
+            } else {
+                DrawFullShaderRegion(ctx, R, A);
+            }
+            ctx->poolCursor = myStart;
             return;
         }
     }
 
+    // ── SUBDIVISION ───────────────────────────────────────────────────────────
     Region regions[4];
     subdivise(R, regions);
-    for (int i = 0; i < 4; i++)
-        warnock(ctx, &regions[i], myIndices, localCount, depth + 1);
 
-    // --- 5. NETTOYAGE CRUCIAL ---
-    // Une fois que les 4 enfants ont fini, on remet le curseur là où il était
-    // pour que les autres branches de l'arbre réutilisent cet espace.
-    ctx->poolCursor = myStart;
+    for (int i = 0; i < 4; i++) {
+        ctx->poolCursor = childStart;  // ← chaque enfant repart du même endroit
+        warnock(ctx, &regions[i], myIndices, localCount, depth + 1);
+    }
+
+    ctx->poolCursor = myStart;  // ← libère tout ce niveau
 }
