@@ -169,10 +169,8 @@ int main(void)
     }
 
     if (cfg.zbuffer || cfg.tiles)
-        zbuffer = malloc(cfg.screen_width * cfg.screen_height * sizeof(float)); 
-        
-    if (cfg.warnock)
-        indexPool = (int*)malloc(sizeof(int) * cfg.max_pool_size);
+        zbuffer = malloc(cfg.screen_width * cfg.screen_height * sizeof(float));         
+
 
     // ── Caméra ────────────────────────────────────────────────────────────────
     Camera3D camera = { 0 };
@@ -252,6 +250,13 @@ int main(void)
             };
         }
         printf("Succès : %d normales lissées extraites.\n", mesh.vertexCount);
+    }
+
+    if (cfg.warnock){
+        int max_pool_size = mesh.triangleCount * (ctx.tree_depth + 2);
+        indexPool = (int*)malloc(sizeof(int) * max_pool_size);
+        if (!indexPool) { printf("ERREUR: malloc indexPool failed!\n"); return 1; }
+        ctx.max_pool_size = max_pool_size;
     }
 
     float rotX = 0.0f, rotY = 0.0f, rotZ = 0.0f;
@@ -653,6 +658,8 @@ int main(void)
         if (ctx.dof && cfg.tiles)
             DrawText(TextFormat("DoF focal: %.1f  range: %.1f  blur: %d",
                 ctx.focalDistance, ctx.focalRange, ctx.maxBlurRadius), 10, 240, 20, YELLOW);
+        if (cfg.warnock) 
+            DrawText(TextFormat("max_pool_size: %d", ctx.max_pool_size), 10, 210, 20, YELLOW);
 
         EndDrawing();
     }
